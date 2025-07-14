@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
-import {EIP712} from '@openzeppelin/contracts/utils/cryptography/EIP712.sol';
-import '../interfaces/IProposer.sol';
-import 'forge-std/console.sol';
+import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import "../interfaces/IProposer.sol";
+import "forge-std/console.sol";
 
 /// @title TrustlessProposer
 /// @notice A secure proposer implementation that requires cryptographic signatures
@@ -15,12 +15,12 @@ contract TrustlessProposer is IProposer, EIP712 layout at 25_732_701_950_170_629
     error SignatureInvalid();
 
     bytes32 public constant CALL_TYPEHASH =
-        keccak256('Call(uint256 deadline,uint256 nonce,address target,uint256 value,bytes calldata)');
+        keccak256("Call(uint256 deadline,uint256 nonce,address target,uint256 value,bytes calldata)");
 
     address public immutable PROPOSER_MULTICALL;
     uint256 public nestedNonce;
 
-    constructor(address _proposerMulticall) EIP712('TrustlessProposer', '1') {
+    constructor(address _proposerMulticall) EIP712("TrustlessProposer", "1") {
         PROPOSER_MULTICALL = _proposerMulticall;
     }
 
@@ -35,7 +35,8 @@ contract TrustlessProposer is IProposer, EIP712 layout at 25_732_701_950_170_629
         if (_nonce != nestedNonce) revert NonceTooLow();
 
         // Create the EIP-712 message hash
-        bytes32 _structHash = keccak256(abi.encode(CALL_TYPEHASH, _deadline, _nonce, _target, _value, keccak256(_calldata)));
+        bytes32 _structHash =
+            keccak256(abi.encode(CALL_TYPEHASH, _deadline, _nonce, _target, _value, keccak256(_calldata)));
         bytes32 _messageHash = _hashTypedDataV4(_structHash);
 
         // Extract signature components
@@ -62,16 +63,14 @@ contract TrustlessProposer is IProposer, EIP712 layout at 25_732_701_950_170_629
         return true;
     }
 
-    function getMessageHash(
-        uint256 _deadline,
-        uint256 _nonce,
-        address _target,
-        uint256 _value,
-        bytes memory _calldata
-    ) external view returns (bytes32) {
+    function getMessageHash(uint256 _deadline, uint256 _nonce, address _target, uint256 _value, bytes memory _calldata)
+        external
+        view
+        returns (bytes32)
+    {
         return _hashTypedDataV4(keccak256(abi.encode(CALL_TYPEHASH, _deadline, _nonce, _target, _value, _calldata)));
     }
 
     receive() external payable {}
     fallback() external payable {}
-} 
+}

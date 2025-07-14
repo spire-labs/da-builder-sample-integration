@@ -51,8 +51,8 @@ contract IntegrationTest is Test {
         console.log("============================");
 
         address target = address(inbox);
-        bytes memory data = abi.encodeWithSignature("sendMessage(address,bytes)",
-            address(0x42), abi.encodeWithSignature("increment()"));
+        bytes memory data =
+            abi.encodeWithSignature("sendMessage(address,bytes)", address(0x42), abi.encodeWithSignature("increment()"));
 
         // Debug: Check addresses
         console.log("User (EOA) address:", user);
@@ -76,8 +76,8 @@ contract IntegrationTest is Test {
 
     function testTrustlessProposerRejectsInvalidSignature() public {
         address target = address(inbox);
-        bytes memory data = abi.encodeWithSignature("sendMessage(address,bytes)",
-            address(0x42), abi.encodeWithSignature("increment()"));
+        bytes memory data =
+            abi.encodeWithSignature("sendMessage(address,bytes)", address(0x42), abi.encodeWithSignature("increment()"));
         // Create data with invalid signature
         bytes memory invalidData = abi.encode(bytes(""), block.timestamp, 0, data);
         vm.prank(PROPOSER_MULTICALL);
@@ -87,8 +87,8 @@ contract IntegrationTest is Test {
 
     function testTrustlessProposerRejectsExpiredDeadline() public {
         address target = address(inbox);
-        bytes memory data = abi.encodeWithSignature("sendMessage(address,bytes)",
-            address(0x42), abi.encodeWithSignature("increment()"));
+        bytes memory data =
+            abi.encodeWithSignature("sendMessage(address,bytes)", address(0x42), abi.encodeWithSignature("increment()"));
         // Create data with expired deadline
         uint256 expiredDeadline = block.timestamp - 1;
         bytes memory expiredData = abi.encode(bytes(""), expiredDeadline, 0, data);
@@ -99,8 +99,8 @@ contract IntegrationTest is Test {
 
     function testTrustlessProposerRejectsWrongNonce() public {
         address target = address(inbox);
-        bytes memory data = abi.encodeWithSignature("sendMessage(address,bytes)",
-            address(0x42), abi.encodeWithSignature("increment()"));
+        bytes memory data =
+            abi.encodeWithSignature("sendMessage(address,bytes)", address(0x42), abi.encodeWithSignature("increment()"));
         // Create data with wrong nonce
         bytes memory wrongNonceData = abi.encode(bytes(""), block.timestamp, 999, data);
         vm.prank(PROPOSER_MULTICALL);
@@ -117,13 +117,12 @@ contract IntegrationTest is Test {
 
         // Test basic call functionality
         address target = address(inbox);
-        bytes memory data = abi.encodeWithSignature("sendMessage(address,bytes)",
-            address(0x42), abi.encodeWithSignature("increment()"));
+        bytes memory data =
+            abi.encodeWithSignature("sendMessage(address,bytes)", address(0x42), abi.encodeWithSignature("increment()"));
 
         vm.prank(PROPOSER_MULTICALL);
-        (bool success,) = address(unsafeProposer).call(
-            abi.encodeWithSignature("call(address,bytes,uint256)", target, data, 0)
-        );
+        (bool success,) =
+            address(unsafeProposer).call(abi.encodeWithSignature("call(address,bytes,uint256)", target, data, 0));
         assertTrue(success, "UnsafeProposer call should succeed");
 
         // Verify the call was processed
@@ -151,9 +150,8 @@ contract IntegrationTest is Test {
         bytes memory data = abi.encode(versionedHashes);
 
         vm.prank(PROPOSER_MULTICALL);
-        (bool success,) = address(opStackProposer).call(
-            abi.encodeWithSignature("call(address,bytes,uint256)", target, data, 0)
-        );
+        (bool success,) =
+            address(opStackProposer).call(abi.encodeWithSignature("call(address,bytes,uint256)", target, data, 0));
         assertTrue(success, "OPStackProposer call should succeed");
 
         console.log("OPStackProposer call successful!");
@@ -211,17 +209,17 @@ contract IntegrationTest is Test {
 
         // Test that non-builder cannot call proposers directly
         address target = address(inbox);
-        bytes memory data = abi.encodeWithSignature("sendMessage(address,bytes)", 
-            address(0x42), abi.encodeWithSignature("increment()"));
-        
+        bytes memory data =
+            abi.encodeWithSignature("sendMessage(address,bytes)", address(0x42), abi.encodeWithSignature("increment()"));
+
         // This should fail because the caller is not PROPOSER_MULTICALL or the contract itself
         address unauthorized = address(0xdeadbeef);
         vm.prank(unauthorized);
         vm.expectRevert(abi.encodeWithSelector(IProposer.Unauthorized.selector));
         proposerImpl.call(target, data, 0);
-        
+
         console.log("Access control test completed");
-        
+
         console.log("Proposer access control test passed!");
     }
 
@@ -230,35 +228,41 @@ contract IntegrationTest is Test {
      * This follows the pattern from the DA Builder documentation
      */
     function createTrustlessProposerData(address eoa, address target, bytes memory callData, uint256 value)
-        internal view returns (bytes memory)
+        internal
+        view
+        returns (bytes memory)
     {
         uint256 nonce = TrustlessProposer(payable(eoa)).nestedNonce();
         uint256 deadline = block.timestamp + 3600;
-        
+
         // Manually compute the correct domain separator for the EOA address
-        bytes32 domainSeparator = keccak256(abi.encode(
-            keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
-            keccak256("TrustlessProposer"),
-            keccak256("1"),
-            block.chainid,
-            eoa // Use EOA address as verifyingContract
-        ));
-        
+        bytes32 domainSeparator = keccak256(
+            abi.encode(
+                keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+                keccak256("TrustlessProposer"),
+                keccak256("1"),
+                block.chainid,
+                eoa // Use EOA address as verifyingContract
+            )
+        );
+
         // Create the struct hash
-        bytes32 structHash = keccak256(abi.encode(
-            keccak256("Call(uint256 deadline,uint256 nonce,address target,uint256 value,bytes calldata)"),
-            deadline,
-            nonce,
-            target,
-            value,
-            keccak256(callData)
-        ));
-        
+        bytes32 structHash = keccak256(
+            abi.encode(
+                keccak256("Call(uint256 deadline,uint256 nonce,address target,uint256 value,bytes calldata)"),
+                deadline,
+                nonce,
+                target,
+                value,
+                keccak256(callData)
+            )
+        );
+
         // Create the message hash
         bytes32 messageHash = keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
-        
+
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(USER_PRIVATE_KEY, messageHash);
         bytes memory signature = abi.encodePacked(r, s, v);
         return abi.encode(signature, deadline, nonce, callData);
     }
-} 
+}

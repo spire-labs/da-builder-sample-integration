@@ -5,4 +5,4 @@ pragma solidity ^0.8.0;
 interface ICreate2Factory {
     function deploy(bytes32 salt, bytes memory bytecode) external returns (address);
     function getDeployed(bytes32 salt) external view returns (address);
-} 
+}
