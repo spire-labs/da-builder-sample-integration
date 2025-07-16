@@ -17,8 +17,8 @@ contract IntegrationTest is Test {
     uint256 constant USER_PRIVATE_KEY = 0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6;
     address public user;
     address public builder;
-    address constant PROPOSER_MULTICALL = address(0x1234567890123456789012345678901234567890);
-    address constant GAS_TANK = address(0x2345678901234567890123456789012345678901);
+    address constant PROPOSER_MULTICALL = address(0x5132dCe9aD675b2ac5E37D69D2bC7399764b5469);
+    address constant GAS_TANK = address(0x18Fa15ea0A34a7c4BCA01bf7263b2a9Ac0D32e92);
     address constant L2_INBOX = address(0x3456789012345678901234567890123456789012);
 
     // Test contracts

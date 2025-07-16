@@ -97,18 +97,31 @@ cast wallet new
 # Required for all deployments
 export PRIVATE_KEY="your_private_key_here"
 
-# Testnet defaults (can be overridden)
-export RPC_URL="https://ethereum-hoodi-rpc.publicnode.com"
-export DA_BUILDER_API_URL="https://da-builder.hoodi.spire.dev/"
+# Testnet defaults (Hoodi - can be overridden)
+export TARGET_CHAIN="hoodi"                                     # Default: "hoodi"
+export RPC_URL="https://ethereum-hoodi-rpc.publicnode.com"      # Auto-configured per chain
+export DA_BUILDER_API_URL="https://da-builder.hoodi.spire.dev/" # Auto-configured per chain
 
-# Optional: Override for mainnet deployment
-export TARGET_CHAIN="mainnet"                                    # Default: "hoodi"
+# Optional: Override for other chains
+export TARGET_CHAIN="holesky"                                   # Holesky Prod
+export TARGET_CHAIN="mainnet"                                   # Ethereum Mainnet
+
+# For mainnet deployment
+export TARGET_CHAIN="mainnet"
 export RPC_URL="your_mainnet_rpc_endpoint"                      # REQUIRED for mainnet
 export GAS_TANK_ADDRESS="0x..."                                 # Optional override
 export PROPOSER_MULTICALL_ADDRESS="0x..."                       # Optional override
 ```
 
 **⚠️ Important:** For mainnet deployment, you **must** override the RPC_URL with your own Ethereum RPC endpoint. The default URL is for Hoodi testnet only.
+
+### Chain Configuration Details
+
+| Chain        | Chain ID | DA Builder URL                        | GasTank Address                            | ProposerMulticall Address                  |
+| ------------ | -------- | ------------------------------------- | ------------------------------------------ | ------------------------------------------ |
+| Holesky Prod | 17000    | https://da-builder.holesky.spire.dev/ | 0x18Fa15ea0A34a7c4BCA01bf7263b2a9Ac0D32e92 | 0x5132dCe9aD675b2ac5E37D69D2bC7399764b5469 |
+| Hoodi Prod   | 560048   | https://da-builder.hoodi.spire.dev/   | 0x18Fa15ea0A34a7c4BCA01bf7263b2a9Ac0D32e92 | 0x5132dCe9aD675b2ac5E37D69D2bC7399764b5469 |
+| Mainnet Prod | 1        | https://da-builder.mainnet.spire.dev/ | 0x2565c0A726cB0f2F79cd16510c117B4da6a6534b | 0x9ccc2f3ecdE026230e11a5c8799ac7524f2bb294 |
 
 4. **Get testnet ETH:**
    - **Hoodi**: https://hoodi-faucet.pk910.de/
