@@ -11,6 +11,12 @@ use alloy_dyn_abi::DynSolValue;
 use alloy_eips::eip7702::Authorization;
 use alloy::signers::{Signer, SignerSync};
 use alloy_sol_types::SolCall;
+use alloy::{
+    sol,
+    sol_types::SolType,
+};
+
+type Eip7702InnerTuple = sol! { tuple(bytes, uint256, uint256, bytes) };
 use eyre::Result;
 use url::Url;
 
@@ -646,13 +652,13 @@ impl DABuilderClient {
         let signature = self.wallet.sign_message(&message_hash_bytes).await?;
         
         // Encode (signature, deadline, nonce, callData)
-        let encoded = [
-            DynSolValue::Bytes(signature.as_bytes().to_vec()).abi_encode(),
-            DynSolValue::Uint(deadline, 32).abi_encode(),
-            DynSolValue::Uint(nonce, 32).abi_encode(),
-            DynSolValue::Bytes(call_data.to_vec()).abi_encode(),
-        ].concat();
-        Ok(Bytes::from(encoded))
+        let inner_call_tuple = Eip7702InnerTuple::abi_encode(&(
+            signature.as_bytes(),
+            deadline,
+            nonce,
+            call_data.clone()
+        ));
+        Ok(Bytes::from(inner_call_tuple))
     }
 
 
