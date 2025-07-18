@@ -1,4 +1,7 @@
-use alloy::primitives::{Address, U256, Bytes};
+use alloy::{
+    dyn_abi::DynSolValue,
+    primitives::{Address, Bytes, U256},
+};
 use std::str::FromStr;
 use alloy_provider::{Provider, ProviderBuilder, DynProvider, PendingTransactionBuilder};
 use alloy_signer_local::PrivateKeySigner;
@@ -6,7 +9,7 @@ use alloy_network::Ethereum;
 use alloy_rpc_types::TransactionRequest;
 use alloy::primitives::TxKind;
 use alloy_network::{TransactionBuilder, TransactionBuilder4844, TransactionBuilder7702};
-use alloy_dyn_abi::DynSolValue;
+
 
 use alloy_eips::eip7702::Authorization;
 use alloy::signers::{Signer, SignerSync};
@@ -16,7 +19,11 @@ use alloy::{
     sol_types::SolType,
 };
 
-type Eip7702InnerTuple = sol! { tuple(bytes, uint256, uint256, bytes) };
+type NestedSignedCall = sol! { tuple(bytes, uint256, uint256, bytes) };
+
+// EIP-712 types for TrustlessProposer
+type Eip712Domain = sol! { tuple(bytes32, bytes32, bytes32, uint256, address) };
+type MessageStruct = sol! { tuple(bytes32, uint256, uint256, address, uint256, bytes32) };
 use eyre::Result;
 use url::Url;
 
@@ -185,38 +192,20 @@ impl DABuilderClient {
             value,
             deadline_secs,
         ).await?;
-        
-        // Get current nonce for the transaction
-        let nonce = self.provider.get_transaction_count(self.address).await?;
-        
+        let trustless_proposer = TrustlessProposer::new(self.address, da_provider);
+        // Since we are using TrustlessProposer, the value can be set to 0 since the encoded call is what carries the value that would be sent to the true target
+        let trustless_proposer_tx_request = trustless_proposer.call(target, encoded_call, U256::ZERO).into_transaction_request();
+
         // Create the transaction based on whether blob data is provided
         let tx = if has_blob_data {
             // EIP-4844 blob transaction - use the existing sidecar from the request
             let sidecar = blob_sidecar.unwrap();
             
             // Create EIP-4844 transaction with blob sidecar
-            TransactionRequest::default()
-                .with_blob_sidecar(sidecar)
-                .with_to(self.address) // Call the EOA address directly (has proposer code via EIP-7702)
-                .with_input(encoded_call)
-                .with_value(value)
-                .with_gas_limit(transaction_request.gas.unwrap_or(200_000))
-                .with_max_fee_per_gas(transaction_request.max_fee_per_gas.unwrap_or(20_000_000_000u128))
-                .with_max_priority_fee_per_gas(transaction_request.max_priority_fee_per_gas.unwrap_or(2_000_000_000u128))
-                .with_max_fee_per_blob_gas(transaction_request.max_fee_per_blob_gas.unwrap_or(15_000_000_000u128))
-                .with_chain_id(self.chain_id)
-                .with_nonce(nonce)
+            trustless_proposer_tx_request.with_blob_sidecar(sidecar)
         } else {
             // Regular transaction
-            TransactionRequest::default()
-                .with_to(self.address) // Call the EOA address directly (has proposer code via EIP-7702)
-                .with_input(encoded_call)
-                .with_value(value)
-                .with_gas_limit(transaction_request.gas.unwrap_or(200_000))
-                .with_max_fee_per_gas(transaction_request.max_fee_per_gas.unwrap_or(20_000_000_000u128))
-                .with_max_priority_fee_per_gas(transaction_request.max_priority_fee_per_gas.unwrap_or(2_000_000_000u128))
-                .with_chain_id(self.chain_id)
-                .with_nonce(nonce)
+            trustless_proposer_tx_request
         };
         
         // Send the transaction and return the pending transaction
@@ -630,7 +619,7 @@ impl DABuilderClient {
     }
 
     /// Prepare the ABI-encoded TrustlessProposer call (EIP-712 signature, deadline, nonce, calldata)
-    /// Uses the contract's getMessageHash function for reliable hashing
+    /// Uses Alloy's EIP-712 implementation for reliable hashing and encoding
     pub async fn prepare_trustless_proposer_call(
         &self,
         target: Address,
@@ -640,25 +629,84 @@ impl DABuilderClient {
     ) -> Result<Bytes> {
         let nonce = self.get_proposer_nonce().await?;
         let deadline = U256::from(deadline_secs);
-        
-        // Use the TrustlessProposer contract's getMessageHash function
-        // After EIP-7702 setup, the EOA has the proposer code, so we call the EOA address
-        let contract = TrustlessProposer::new(self.address, &self.provider);
-        let message_hash = contract.getMessageHash(deadline, nonce, target, value, call_data.clone()).call().await?;
-        
-        // Sign the message hash (convert FixedBytes to Vec<u8> then to Bytes for signing)
-        let message_hash_vec = message_hash.to_vec();
-        let message_hash_bytes = Bytes::from(message_hash_vec);
-        let signature = self.wallet.sign_message(&message_hash_bytes).await?;
-        
-        // Encode (signature, deadline, nonce, callData)
-        let inner_call_tuple = Eip7702InnerTuple::abi_encode(&(
-            signature.as_bytes(),
+
+        // Create EIP-712 message hash using Alloy
+        let message_hash = self.create_eip712_message_hash(
             deadline,
             nonce,
-            call_data.clone()
+            target,
+            value,
+            call_data.clone(),
+        )?;
+
+        // @note Instead of using alloy to generate the message hash we can also use the contract's getMessageHash to avoid
+        // issues with different contract versions changing the eip712 domain separator of course at the cost of a network call
+        // let contract = TrustlessProposer::new(proposer_addr, &self.provider);
+        // let message_hash = contract.getMessageHash(deadline, nonce, target, value, call_data.clone()).call().await?;
+
+        // Sign the message hash
+        let signature = self.wallet.sign_hash(&message_hash).await?;
+
+        // Create the tuple and encode it using Alloy's sol! macro
+        let alloy_encoded = NestedSignedCall::abi_encode_sequence(&(
+            Bytes::from(signature.as_bytes()),
+            deadline,
+            nonce,
+            call_data,
         ));
-        Ok(Bytes::from(inner_call_tuple))
+        
+        Ok(Bytes::from(alloy_encoded))
+    }
+
+    /// Create EIP-712 message hash for TrustlessProposer
+    /// This replicates the Solidity _hashTypedDataV4 function
+    fn create_eip712_message_hash(
+        &self,
+        deadline: U256,
+        nonce: U256,
+        target: Address,
+        value: U256,
+        call_data: Bytes,
+    ) -> Result<alloy::primitives::B256> {
+        // EIP-712 domain separator (matches OpenZeppelin's _buildDomainSeparator)
+        let type_hash = alloy::primitives::keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
+        let hashed_name = alloy::primitives::keccak256("TrustlessProposer");
+        let hashed_version = alloy::primitives::keccak256("1");
+        
+        let domain_value = Eip712Domain::abi_encode_sequence(&(
+            type_hash,
+            hashed_name,
+            hashed_version,
+            U256::from(self.chain_id),
+            self.address,
+        ));
+        let domain_separator = alloy::primitives::keccak256(domain_value);
+        
+        // Call type hash
+        let call_type_hash = alloy::primitives::keccak256("Call(uint256 deadline,uint256 nonce,address target,uint256 value,bytes calldata)");
+        
+        // Hash the call data
+        let call_data_hash = alloy::primitives::keccak256(call_data.as_ref());
+        
+        // Encode the struct hash (includes the call type hash as first parameter)
+        let call_struct_value = MessageStruct::abi_encode_sequence(&(
+            call_type_hash,
+            deadline,
+            nonce,
+            target,
+            value,
+            call_data_hash,
+        ));
+        let message_hash = alloy::primitives::keccak256(call_struct_value);
+        
+        // Create the final EIP-712 hash: keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash))
+        let eip712_hash = alloy::primitives::keccak256([
+            &[0x19, 0x01],
+            &domain_separator[..],
+            &message_hash[..]
+        ].concat());
+        
+        Ok(eip712_hash)
     }
 
 
