@@ -32,7 +32,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             client
         }
         Err(e) => {
-            eprintln!("❌ Failed to initialize DA Builder client: {}", e);
+            eprintln!("❌ Failed to initialize DA Builder client: {e}");
             process::exit(1);
         }
     };
@@ -89,7 +89,7 @@ fn load_configuration() -> Result<ConfigTuple, Box<dyn std::error::Error>> {
         "hoodi" => (560048u64, "https://da-builder.hoodi.spire.dev/".to_string()),
         "mainnet" => (1u64, "https://da-builder.mainnet.spire.dev/".to_string()),
         _ => {
-            eprintln!("❌ Unsupported target chain: {}", target_chain);
+            eprintln!("❌ Unsupported target chain: {target_chain}");
             eprintln!("Supported chains: holesky, hoodi, mainnet");
             process::exit(1);
         }
@@ -148,11 +148,11 @@ fn prompt_user_confirmation(
     client: &DABuilderClient,
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("\n📋 Configuration Summary:");
-    println!("  RPC URL: {}", rpc_url);
-    println!("  DA Builder RPC URL: {}", da_builder_rpc_url);
+    println!("  RPC URL: {rpc_url}");
+    println!("  DA Builder RPC URL: {da_builder_rpc_url}");
     println!("  Target Chain: {} (Chain ID: {})", env::var("TARGET_CHAIN").unwrap_or_else(|_| "hoodi".to_string()), chain_id);
-    println!("  Gas Tank: {}", gas_tank_address);
-    println!("  ProposerMulticall: {}", proposer_multicall_address);
+    println!("  Gas Tank: {gas_tank_address}");
+    println!("  ProposerMulticall: {proposer_multicall_address}");
     println!("  Wallet Address: {}", client.address());
     println!();
     println!("⚠️  This will execute all DA Builder integration steps including:");
@@ -215,17 +215,17 @@ async fn check_gas_tank_withdrawal(client: &DABuilderClient) -> Result<(), Box<d
                                                     );
                                                 }
                                                 Err(e) => {
-                                                    println!("⚠️  Failed to get balance after recovery: {}", e);
+                                                    println!("⚠️  Failed to get balance after recovery: {e}");
                                                 }
                                             }
                                         }
                                         Err(e) => {
-                                            println!("⚠️  Failed to get close transaction receipt: {}", e);
+                                            println!("⚠️  Failed to get close transaction receipt: {e}");
                                         }
                                     }
                                 }
                                 Err(e) => {
-                                    println!("⚠️  Failed to close account: {}", e);
+                                    println!("⚠️  Failed to close account: {e}");
                                 }
                             }
                         } else {
@@ -234,7 +234,7 @@ async fn check_gas_tank_withdrawal(client: &DABuilderClient) -> Result<(), Box<d
                         }
                     }
                     Err(e) => {
-                        println!("⚠️  Failed to check if account can be closed: {}", e);
+                        println!("⚠️  Failed to check if account can be closed: {e}");
                         println!("   Continuing with next steps...");
                     }
                 }
@@ -243,7 +243,7 @@ async fn check_gas_tank_withdrawal(client: &DABuilderClient) -> Result<(), Box<d
             }
         }
         Err(e) => {
-            println!("⚠️  Failed to check withdrawal status: {}", e);
+            println!("⚠️  Failed to check withdrawal status: {e}");
             println!("   Continuing with next steps...");
         }
     }
@@ -262,7 +262,7 @@ async fn check_wallet_balance(client: &DABuilderClient, chain_id: u64) -> Result
             balance
         }
         Err(e) => {
-            eprintln!("❌ Failed to get balance: {}", e);
+            eprintln!("❌ Failed to get balance: {e}");
             process::exit(1);
         }
     };
@@ -308,11 +308,11 @@ async fn deploy_trustless_proposer(client: &DABuilderClient, proposer_multicall_
         &[DynSolValue::Address(proposer_multicall_address)], // ProposerMulticall address constructor argument
     ).await {
         Ok(address) => {
-            println!("✅ TrustlessProposer deployed/verified at: {}", address);
+            println!("✅ TrustlessProposer deployed/verified at: {address}");
             address
         }
         Err(e) => {
-            eprintln!("❌ Failed to deploy TrustlessProposer: {}", e);
+            eprintln!("❌ Failed to deploy TrustlessProposer: {e}");
             process::exit(1);
         }
     };
@@ -404,11 +404,11 @@ async fn deploy_mock_inbox(client: &DABuilderClient) -> Result<Address, Box<dyn 
         &[], // No constructor arguments for MockInbox
     ).await {
         Ok(address) => {
-            println!("✅ MockInbox deployed/verified at: {}", address);
+            println!("✅ MockInbox deployed/verified at: {address}");
             address
         }
         Err(e) => {
-            eprintln!("❌ Failed to deploy MockInbox: {}", e);
+            eprintln!("❌ Failed to deploy MockInbox: {e}");
             process::exit(1);
         }
     };
