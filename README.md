@@ -16,6 +16,8 @@ This sample integration will help you complete the following objectives:
 4. **Deposit funds** into the GasTank contract
 5. **Submit a transaction** to DA Builder on testnet
 6. **Verify the transaction** onchain showing calls being made to the inbox contract
+7. **Manage account lifecycle** including closure and fund recovery
+8. **Handle transaction failures** with automatic revert detection and clear error reporting
 
 ## 🏗️ Architecture
 
@@ -70,6 +72,11 @@ graph TB
 - **Foundry**
 - **An Ethereum wallet**
 - **Testnet ETH** (see step 4 below)
+
+### Features
+
+- **🚀 Full Integration Demo** - Complete DA Builder workflow
+- **📊 Account Management** - Check status, initiate/complete closure
 
 ### Setup
 
@@ -129,24 +136,54 @@ export PROPOSER_MULTICALL_ADDRESS="0x..."                       # Optional overr
 
 ### 5. Deploy Contracts and Run Integration
 
-Deploy the necessary contracts and run the complete integration using the Rust CLI tool:
+The integration provides a flexible CLI with multiple commands for different use cases:
 
+#### **Full Integration Demo (Default)**
 ```bash
 cargo run --release
 ```
+This runs the complete integration demo with optional account closing.
+
+#### **Account Management Commands**
+```bash
+# Check account status and balances
+cargo run account-status
+
+# Deposit funds to Gas Tank
+cargo run deposit
+
+# Initiate account closure (7-day withdrawal period)
+cargo run initiate-close
+
+# Complete account closure (after 7-day period)
+cargo run close-account
+
+# Show help and all available commands
+cargo run help
+```
+
+#### **Command Reference**
+| Command          | Description                                        |
+| ---------------- | -------------------------------------------------- |
+| `demo`           | Run the full DA Builder integration demo (default) |
+| `account-status` | Show current account status and Gas Tank balance   |
+| `deposit`        | Deposit funds to Gas Tank                          |
+| `initiate-close` | Initiate account closure (7-day withdrawal period) |
+| `close-account`  | Complete account closure (after 7-day period)      |
+| `help`           | Show help message and all commands                 |
 
 **🚀 Automatic Build Process:** The build system will automatically:
 1. **Compile Solidity contracts** with `forge build` (if artifacts don't exist)
 2. **Generate Rust bindings** from the compiled contracts
 3. **Compile the Rust application**
 
-This single command will then:
+The full demo will then:
 - Deploy the TrustlessProposer contract
 - Set up EIP-7702 account code
 - Deposit funds into the GasTank
 - Submit a transaction to DA Builder
 - Monitor on-chain execution
-- Demonstrate account closing
+- **Optionally** demonstrate account closing (user choice)
 
 ### 6. Verify on Etherscan
 
@@ -201,7 +238,86 @@ The complete integration performs these steps:
 3. **Deposit into Gas Tank** - Deposit ETH into the DA Builder Gas Tank
 4. **Submit transaction to DA Builder** - Create and submit a transaction
 5. **Monitor execution** - Track the transaction on-chain
-6. **Account closing** - Demonstrate account closure and fund withdrawal
+6. **Optional account closing** - Demonstrate account closure and fund withdrawal
+
+## 🚪 Account Management & Withdrawal
+
+### Account Lifecycle
+The DA Builder integration includes a complete account management system:
+
+1. **Active Account** - Can perform transactions and deposits
+2. **Withdrawal Initiated** - 7-day waiting period begins
+3. **Ready to Close** - 7-day period completed, can finalize closure
+4. **Closed** - Account closed, funds recovered
+
+### 7-Day Withdrawal Period
+When you initiate account closure:
+- ✅ **Funds are safe** - No one can access your funds during this period
+- ⏳ **7-day waiting period** - Required security measure
+- 🚫 **No new operations** - Account cannot be used for new transactions
+- 💰 **Automatic recovery** - Funds are returned to your wallet after closure
+
+### Account Management Workflow
+```bash
+# 1. Check current status
+cargo run account-status
+
+# 2. Deposit funds (if needed)
+cargo run deposit
+
+# 3. Initiate closure (if desired)
+cargo run initiate-close
+
+# 4. Wait 7 days...
+
+# 5. Complete closure
+cargo run close-account
+```
+
+### Gas Tank Deposits
+The `deposit` command provides a convenient way to add funds to your Gas Tank:
+
+- **Balance validation** - Checks wallet balance before attempting deposit
+- **Withdrawal mode protection** - Prevents deposits when account is in withdrawal mode
+- **Flexible amounts** - Accept custom amounts or use suggested defaults
+- **Clear feedback** - Shows before/after balances and transaction status
+
+### Usage Examples
+
+#### **Scenario 1: Full Demo (No Account Closing)**
+```bash
+cargo run
+# Runs complete integration demo
+# Prompts for account closing (user can skip)
+# Account remains usable for future runs
+```
+
+#### **Scenario 2: Account Management Only**
+```bash
+# Check current status
+cargo run account-status
+
+# Deposit funds if needed
+cargo run deposit
+
+# Initiate closure when ready
+cargo run initiate-close
+
+# Wait 7 days...
+
+# Complete closure
+cargo run close-account
+```
+
+#### **Scenario 3: Recovery from Previous Closure**
+```bash
+# If account is already in withdrawal
+cargo run account-status
+# Shows withdrawal status and time remaining
+
+# When ready to complete
+cargo run close-account
+```
 
 ## 🔧 Troubleshooting
 
@@ -222,6 +338,11 @@ The complete integration performs these steps:
 **"Unauthorized" error**
 - Make sure you're calling from the correct address
 - TrustlessProposer only accepts calls that have been signed by the EOA owner and originate from itself or the designated multicall contract
+
+**"Account closure" issues**
+- Check account status: `cargo run account-status`
+- If account is in withdrawal period, wait 7 days before completing closure
+- If you want to use the account for new DA Builder operations, complete the closure first: `cargo run close-account`
 
 ## 🤝 Support
 

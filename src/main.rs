@@ -1,5 +1,5 @@
 use alloy::primitives::{Address, U256};
-use alloy_rpc_types::{TransactionRequest, TransactionInput};
+use alloy_rpc_types::{TransactionRequest, TransactionInput, TransactionReceipt};
 use alloy::primitives::TxKind;
 use alloy_network::TransactionBuilder4844;
 use alloy_dyn_abi::DynSolValue;
@@ -17,10 +17,16 @@ type ConfigTuple = (String, String, u64, String, Address, Address);
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🚀 DA Builder Sample Integration");
-    println!("================================");
-    println!();
-
+    // Parse command line arguments
+    let args: Vec<String> = env::args().collect();
+    let command = args.get(1).map(|s| s.as_str()).unwrap_or("demo");
+    
+    // Handle help command before loading configuration
+    if matches!(command, "help" | "--help" | "-h") {
+        print_help();
+        return Ok(());
+    }
+    
     // Load configuration
     let (rpc_url, private_key, chain_id, da_builder_rpc_url, gas_tank_address, proposer_multicall_address) = load_configuration()?;
 
@@ -37,25 +43,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    // Prompt user to continue
-    prompt_user_confirmation(&rpc_url, &da_builder_rpc_url, chain_id, gas_tank_address, proposer_multicall_address, &client)?;
+    match command {
+        "demo" => {
+            println!("🚀 DA Builder Sample Integration");
+            println!("================================");
+            println!();
+            
+            // Prompt user to continue
+            prompt_user_confirmation(&rpc_url, &da_builder_rpc_url, chain_id, gas_tank_address, proposer_multicall_address, &client)?;
 
-    // Execute all steps
-    check_gas_tank_withdrawal(&client).await?;
-    check_wallet_balance(&client, chain_id).await?;
-    let proposer_address = deploy_trustless_proposer(&client, proposer_multicall_address).await?;
-    setup_eip7702_account_code(&client, proposer_address).await?;
-    check_and_deposit_to_gas_tank(&client).await?;
-    let client = configure_da_builder_rpc(client, &da_builder_rpc_url).await?;
-    let inbox_address = deploy_mock_inbox(&client).await?;
-    submit_da_builder_transactions(&client, inbox_address).await?;
-    monitor_onchain_execution(&client).await?;
-    demonstrate_account_closing(&client).await?;
+            // Execute all steps
+            check_gas_tank_withdrawal(&client).await?;
+            check_wallet_balance(&client, chain_id).await?;
+            let proposer_address = deploy_trustless_proposer(&client, proposer_multicall_address).await?;
+            setup_eip7702_account_code(&client, proposer_address).await?;
+            check_and_deposit_to_gas_tank(&client).await?;
+            let client = configure_da_builder_rpc(client, &da_builder_rpc_url).await?;
+            let inbox_address = deploy_mock_inbox(&client).await?;
+            submit_da_builder_transactions(&client, inbox_address).await?;
+            monitor_onchain_execution(&client).await?;
+            
+            // Optional: Demonstrate account closing (separate from main integration)
+            demonstrate_account_closing_optional(&client).await?;
 
-    // Print completion summary
-    print_completion_summary(&client);
-
-    Ok(())
+            // Print completion summary
+            print_completion_summary(&client);
+            
+            Ok(())
+        }
+        "account-status" => show_account_status(&client).await,
+        "deposit" => deposit_to_gas_tank(&client).await,
+        "initiate-close" => initiate_account_close(&client).await,
+        "close-account" => close_account(&client).await,
+        _ => {
+            eprintln!("❌ Unknown command: {command}");
+            print_help();
+            process::exit(1);
+        }
+    }
 }
 
 fn u256_to_eth(u: U256) -> f64 {
@@ -161,7 +186,7 @@ fn prompt_user_confirmation(
     println!("   • EIP-7702 account code setup");
     println!("   • Gas Tank balance management");
     println!("   • DA Builder transaction submission (regular + blob)");
-    println!("   • Account closure initiation");
+    println!("   • Optional account closure demonstration");
     println!();
     
     let mut input = String::new();
@@ -202,10 +227,8 @@ async fn check_gas_tank_withdrawal(client: &DABuilderClient) -> Result<(), Box<d
                             println!("✅ 7-day withdrawal period has passed, closing account to recover funds");
                             match client.close_account().await {
                                 Ok(close_tx) => {
-                                    match close_tx.get_receipt().await {
-                                        Ok(close_receipt) => {
-                                            println!("✅ Account closed successfully: {}", close_receipt.transaction_hash);
-                                            
+                                    match handle_transaction_receipt(close_tx, "Account close").await {
+                                        Ok(_) => {
                                             // Check balance after recovery
                                             match client.get_balance(client.address()).await {
                                                 Ok(balance) => {
@@ -215,17 +238,20 @@ async fn check_gas_tank_withdrawal(client: &DABuilderClient) -> Result<(), Box<d
                                                     );
                                                 }
                                                 Err(e) => {
-                                                    println!("⚠️  Failed to get balance after recovery: {e}");
+                                                    eprintln!("❌ Failed to get balance after recovery: {e}");
+                                                    process::exit(1);
                                                 }
                                             }
                                         }
                                         Err(e) => {
-                                            println!("⚠️  Failed to get close transaction receipt: {e}");
+                                            eprintln!("{e}");
+                                            process::exit(1);
                                         }
                                     }
                                 }
                                 Err(e) => {
-                                    println!("⚠️  Failed to close account: {e}");
+                                    eprintln!("❌ Failed to close account: {e}");
+                                    process::exit(1);
                                 }
                             }
                         } else {
@@ -234,8 +260,8 @@ async fn check_gas_tank_withdrawal(client: &DABuilderClient) -> Result<(), Box<d
                         }
                     }
                     Err(e) => {
-                        println!("⚠️  Failed to check if account can be closed: {e}");
-                        println!("   Continuing with next steps...");
+                        eprintln!("❌ Failed to check if account can be closed: {e}");
+                        process::exit(1);
                     }
                 }
             } else {
@@ -243,8 +269,8 @@ async fn check_gas_tank_withdrawal(client: &DABuilderClient) -> Result<(), Box<d
             }
         }
         Err(e) => {
-            println!("⚠️  Failed to check withdrawal status: {e}");
-            println!("   Continuing with next steps...");
+            eprintln!("❌ Failed to check withdrawal status: {e}");
+            process::exit(1);
         }
     }
     
@@ -335,9 +361,8 @@ async fn setup_eip7702_account_code(client: &DABuilderClient, proposer_address: 
         } else {
             println!("⚠️  EOA has different account code set");
             println!("   Updating to the new Proposer version...");
-            let setup_receipt = client.setup_eip7702_account_code(proposer_address).await?.get_receipt().await?;
-            println!("✅ EIP-7702 account code updated");
-            println!("   Transaction hash: {}", setup_receipt.transaction_hash);
+            let setup_tx = client.setup_eip7702_account_code(proposer_address).await?;
+            handle_transaction_receipt(setup_tx, "EIP-7702 account code update").await?;
             
             // Verify the setup worked
             client.verify_eip7702_setup(proposer_address).await?;
@@ -345,9 +370,8 @@ async fn setup_eip7702_account_code(client: &DABuilderClient, proposer_address: 
         }
     } else {
         println!("📝 Setting up EIP-7702 account code for the first time");
-        let setup_receipt = client.setup_eip7702_account_code(proposer_address).await?.get_receipt().await?;
-        println!("✅ EIP-7702 account code setup completed");
-        println!("   Transaction hash: {}", setup_receipt.transaction_hash);
+        let setup_tx = client.setup_eip7702_account_code(proposer_address).await?;
+        handle_transaction_receipt(setup_tx, "EIP-7702 account code setup").await?;
         println!("   Your EOA now has contract code that delegates to the TrustlessProposer");
         
         // Verify the setup worked
@@ -370,8 +394,8 @@ async fn check_and_deposit_to_gas_tank(client: &DABuilderClient) -> Result<(), B
     if gas_tank_balance < min_balance {
         println!("⚠️  Low Gas Tank balance detected, depositing funds...");
         let deposit_amount = U256::from(10000000000000000u64); // 0.01 ETH
-        let deposit_receipt = client.deposit_to_gas_tank(deposit_amount).await?.get_receipt().await?;
-        println!("✅ Deposit transaction confirmed: {}", deposit_receipt.transaction_hash);
+        let deposit_tx = client.deposit_to_gas_tank(deposit_amount).await?;
+        handle_transaction_receipt(deposit_tx, "Gas Tank deposit").await?;
         
         let new_balance = client.gas_tank_balance().await?;
         println!("✅ New Gas Tank balance: {} wei ({:.6} ETH)", new_balance, u256_to_eth(new_balance));
@@ -470,8 +494,7 @@ async fn submit_da_builder_transactions(client: &DABuilderClient, inbox_address:
     
     // Wait for regular transaction to be processed before submitting blob transaction
     println!("\n⏳ Waiting for regular transaction to be processed...");
-    let regular_receipt = regular_pending_tx.get_receipt().await?;
-    println!("✅ Regular transaction confirmed on-chain: {}", regular_receipt.transaction_hash);
+    handle_transaction_receipt(regular_pending_tx, "Regular DA Builder transaction").await?;
     
     // Example 2: Blob transaction with blob data
     println!("\nExample 2: Blob transaction with blob data");
@@ -502,8 +525,7 @@ async fn submit_da_builder_transactions(client: &DABuilderClient, inbox_address:
     
     // Wait for blob transaction to be processed
     println!("\n⏳ Waiting for blob transaction to be processed...");
-    let blob_receipt = blob_pending_tx.get_receipt().await?;
-    println!("✅ Blob transaction confirmed on-chain: {}", blob_receipt.transaction_hash);
+    handle_transaction_receipt(blob_pending_tx, "Blob DA Builder transaction").await?;
     
     println!("\n✅ All DA Builder transactions processed and confirmed on-chain");
     
@@ -523,16 +545,71 @@ async fn monitor_onchain_execution(client: &DABuilderClient) -> Result<(), Box<d
     Ok(())
 }
 
-/// Step 9: Demonstrate account closing
-async fn demonstrate_account_closing(client: &DABuilderClient) -> Result<(), Box<dyn std::error::Error>> {
-    println!("\nStep 9: Demonstrating Account Closing");
-    println!("--------------------------------------");
+/// Step 9: Demonstrate account closing (optional)
+async fn demonstrate_account_closing_optional(client: &DABuilderClient) -> Result<(), Box<dyn std::error::Error>> {
+    println!("\nStep 9: Account Closing Demo (Optional)");
+    println!("----------------------------------------");
     
-    println!("Initiating account close...");
-    let initiate_receipt = client.initiate_account_close().await?.get_receipt().await?;
-    println!("✅ Account close initiated: {}", initiate_receipt.transaction_hash);
-    println!("⚠️  In a real implementation, you would wait 7 days before calling close_account()");
-    println!("   You can run this script again later to complete the withdrawal");
+    // Check if account is already in withdrawal process
+    match client.check_withdrawal_initiated().await {
+        Ok(withdrawal_initiated) => {
+            if withdrawal_initiated {
+                println!("⚠️  Account already has withdrawal initiated");
+                match client.can_close_account().await {
+                    Ok(can_close) => {
+                        if can_close {
+                            println!("✅ 7-day withdrawal period has passed, demonstrating account closure");
+                            let close_tx = client.close_account().await?;
+                            handle_transaction_receipt(close_tx, "Account close").await?;
+                            println!("✅ Account closed successfully - funds recovered!");
+                        } else {
+                            println!("⏳ Withdrawal period not yet passed (7 days required)");
+                            println!("   Account is currently in withdrawal mode and cannot be used for new operations");
+                            println!("   You can run this script again later to complete the withdrawal");
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("❌ Failed to check if account can be closed: {e}");
+                        return Ok(()); // Don't exit, just skip this demo
+                    }
+                }
+            } else {
+                // Account is not in withdrawal mode, offer to demonstrate
+                println!("📋 Account closing demonstration available");
+                println!("   This will initiate a 7-day withdrawal period");
+                println!("   ⚠️  WARNING: Once initiated, the account cannot be used for new operations until closed");
+                println!();
+                
+                let mut input = String::new();
+                print!("Demonstrate account closing? (y/n): ");
+                std::io::Write::flush(&mut std::io::stdout()).expect("Failed to flush stdout");
+                std::io::stdin().read_line(&mut input).expect("Failed to read input");
+                
+                match input.trim().to_lowercase().as_str() {
+                    "y" | "yes" => {
+                        println!("🚀 Demonstrating account close initiation...");
+                        let initiate_tx = client.initiate_account_close().await?;
+                        handle_transaction_receipt(initiate_tx, "Account close initiation").await?;
+                        println!("✅ Account close initiated successfully!");
+                        println!("⚠️  Account is now in 7-day withdrawal period");
+                        println!("   You can run this script again later to complete the withdrawal");
+                        println!("   Or use a different account for future operations");
+                    }
+                    "n" | "no" => {
+                        println!("⏭️  Skipping account closing demonstration");
+                        println!("   Main integration demo completed successfully");
+                    }
+                    _ => {
+                        println!("❌ Invalid input. Skipping account closing demonstration");
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("⚠️  Failed to check withdrawal status: {e}");
+            println!("   Skipping account closing demonstration");
+        }
+    }
     
     Ok(())
 }
@@ -551,7 +628,7 @@ fn print_completion_summary(client: &DABuilderClient) {
     println!("✅ Regular transaction submitted to DA Builder");
     println!("✅ Blob transaction submitted to DA Builder");
     println!("✅ All transactions confirmed on-chain");
-    println!("✅ Account closure initiated");
+    println!("✅ Account closure demonstration (optional)");
     println!();
     println!("Library Features Demonstrated:");
     println!("  • send_da_builder_transaction() - DA Builder transactions with automatic EIP-712 signing");
@@ -566,3 +643,282 @@ fn print_completion_summary(client: &DABuilderClient) {
     println!("Check the transactions on Etherscan to verify the calls:");
     println!("  https://hoodi.etherscan.io/address/{}", client.address());
 } 
+
+/// Print help information
+fn print_help() {
+    println!("🚀 DA Builder Sample Integration - CLI");
+    println!("======================================");
+    println!();
+    println!("Usage: cargo run [COMMAND]");
+    println!();
+    println!("Commands:");
+    println!("  demo              Run the full DA Builder integration demo (default)");
+    println!("  account-status    Show current account status and Gas Tank balance");
+    println!("  deposit           Deposit funds to Gas Tank");
+    println!("  initiate-close    Initiate account closure (7-day withdrawal period)");
+    println!("  close-account     Complete account closure (after 7-day period)");
+    println!("  help              Show this help message");
+    println!();
+    println!("Environment Variables:");
+    println!("  PRIVATE_KEY       Your wallet private key (required)");
+    println!("  TARGET_CHAIN      Target chain: holesky, hoodi (default), mainnet");
+    println!("  RPC_URL           RPC endpoint (auto-configured for testnets)");
+    println!("  GAS_TANK_ADDRESS  Gas Tank contract address (auto-configured)");
+    println!("  PROPOSER_MULTICALL_ADDRESS  ProposerMulticall address (auto-configured)");
+    println!();
+    println!("Examples:");
+    println!("  cargo run                    # Run full demo");
+    println!("  cargo run account-status     # Check account status");
+    println!("  cargo run deposit            # Deposit to Gas Tank");
+    println!("  cargo run initiate-close     # Start account closure");
+    println!("  cargo run close-account      # Complete account closure");
+}
+
+/// Show current account status
+async fn show_account_status(client: &DABuilderClient) -> Result<(), Box<dyn std::error::Error>> {
+    println!("📊 Account Status");
+    println!("=================");
+    println!("Address: {}", client.address());
+    
+    // Check wallet balance
+    let balance = client.get_balance(client.address()).await?;
+    println!("Wallet Balance: {} wei ({:.6} ETH)", balance, u256_to_eth(balance));
+    
+    // Check Gas Tank balance
+    let gas_tank_balance = client.gas_tank_balance().await?;
+    println!("Gas Tank Balance: {} wei ({:.6} ETH)", gas_tank_balance, u256_to_eth(gas_tank_balance));
+    
+    // Check withdrawal status
+    match client.check_withdrawal_initiated().await {
+        Ok(withdrawal_initiated) => {
+            if withdrawal_initiated {
+                println!("Withdrawal Status: ⚠️  WITHDRAWAL INITIATED");
+                match client.can_close_account().await {
+                    Ok(can_close) => {
+                        if can_close {
+                            println!("Account Status: ✅ READY TO CLOSE (7-day period passed)");
+                        } else {
+                            println!("Account Status: ⏳ IN WITHDRAWAL PERIOD (7 days required)");
+                        }
+                    }
+                    Err(e) => {
+                        println!("Account Status: ❌ ERROR CHECKING STATUS: {e}");
+                    }
+                }
+            } else {
+                println!("Withdrawal Status: ✅ NO WITHDRAWAL INITIATED");
+                println!("Account Status: ✅ ACTIVE (can perform operations)");
+            }
+        }
+        Err(e) => {
+            println!("Withdrawal Status: ❌ ERROR: {e}");
+        }
+    }
+    
+    Ok(())
+}
+
+/// Initiate account closure
+async fn initiate_account_close(client: &DABuilderClient) -> Result<(), Box<dyn std::error::Error>> {
+    println!("🚪 Initiating Account Closure");
+    println!("=============================");
+    
+    // Check current status
+    match client.check_withdrawal_initiated().await {
+        Ok(withdrawal_initiated) => {
+            if withdrawal_initiated {
+                println!("⚠️  Account already has withdrawal initiated");
+                match client.can_close_account().await {
+                    Ok(can_close) => {
+                        if can_close {
+                            println!("✅ 7-day withdrawal period has passed");
+                            println!("   Use 'cargo run close-account' to complete the closure");
+                        } else {
+                            println!("⏳ Withdrawal period not yet passed (7 days required)");
+                            println!("   Account is currently in withdrawal mode");
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("❌ Failed to check account status: {e}");
+                        return Ok(());
+                    }
+                }
+            } else {
+                println!("📋 Initiating account closure...");
+                println!("⚠️  WARNING: This will start a 7-day withdrawal period");
+                println!("   The account cannot be used for new operations until closed");
+                println!();
+                
+                let mut input = String::new();
+                print!("Continue with account closure? (y/n): ");
+                std::io::Write::flush(&mut std::io::stdout()).expect("Failed to flush stdout");
+                std::io::stdin().read_line(&mut input).expect("Failed to read input");
+                
+                match input.trim().to_lowercase().as_str() {
+                    "y" | "yes" => {
+                        let initiate_tx = client.initiate_account_close().await?;
+                        handle_transaction_receipt(initiate_tx, "Account close initiation").await?;
+                        println!("✅ Account close initiated successfully!");
+                        println!("⚠️  Account is now in 7-day withdrawal period");
+                        println!("   Use 'cargo run close-account' after 7 days to complete");
+                    }
+                    "n" | "no" => {
+                        println!("❌ Account closure cancelled");
+                    }
+                    _ => {
+                        println!("❌ Invalid input. Account closure cancelled");
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("❌ Failed to check withdrawal status: {e}");
+        }
+    }
+    
+    Ok(())
+}
+
+/// Deposit funds to Gas Tank
+async fn deposit_to_gas_tank(client: &DABuilderClient) -> Result<(), Box<dyn std::error::Error>> {
+    println!("💰 Gas Tank Deposit");
+    println!("===================");
+    
+    // Check current Gas Tank balance
+    let current_balance = client.gas_tank_balance().await?;
+    println!("Current Gas Tank balance: {} wei ({:.6} ETH)", current_balance, u256_to_eth(current_balance));
+    
+    // Check wallet balance
+    let wallet_balance = client.get_balance(client.address()).await?;
+    println!("Wallet balance: {} wei ({:.6} ETH)", wallet_balance, u256_to_eth(wallet_balance));
+    
+    // Check if account is in withdrawal mode
+    match client.check_withdrawal_initiated().await {
+        Ok(withdrawal_initiated) => {
+            if withdrawal_initiated {
+                println!("❌ Cannot deposit - account is in withdrawal mode");
+                println!("   Complete account closure first: cargo run close-account");
+                return Ok(());
+            }
+        }
+        Err(e) => {
+            eprintln!("❌ Failed to check withdrawal status: {e}");
+            return Ok(());
+        }
+    }
+    
+    // Determine deposit amount
+    let min_balance = U256::from(10000000000000000u64); // 0.01 ETH
+    let suggested_amount = if current_balance < min_balance {
+        min_balance
+    } else {
+        U256::from(5000000000000000u64) // 0.005 ETH for top-up
+    };
+    
+    println!();
+    println!("Suggested deposit amount: {} wei ({:.6} ETH)", suggested_amount, u256_to_eth(suggested_amount));
+    println!("This will cover several DA Builder transactions");
+    println!();
+    
+    let mut input = String::new();
+    print!("Enter deposit amount in ETH (or press Enter for suggested amount): ");
+    std::io::Write::flush(&mut std::io::stdout()).expect("Failed to flush stdout");
+    std::io::stdin().read_line(&mut input).expect("Failed to read input");
+    
+    let deposit_amount = if input.trim().is_empty() {
+        suggested_amount
+    } else {
+        match input.trim().parse::<f64>() {
+            Ok(eth_amount) => {
+                let wei_amount = U256::from((eth_amount * 1e18) as u128);
+                if wei_amount > wallet_balance {
+                    eprintln!("❌ Insufficient wallet balance for deposit");
+                    return Ok(());
+                }
+                wei_amount
+            }
+            Err(_) => {
+                eprintln!("❌ Invalid amount. Using suggested amount.");
+                suggested_amount
+            }
+        }
+    };
+    
+    println!();
+    println!("📋 Depositing {} wei ({:.6} ETH) to Gas Tank...", deposit_amount, u256_to_eth(deposit_amount));
+    
+    let deposit_tx = client.deposit_to_gas_tank(deposit_amount).await?;
+    handle_transaction_receipt(deposit_tx, "Gas Tank deposit").await?;
+    
+    // Check new balance
+    let new_balance = client.gas_tank_balance().await?;
+    println!("✅ Deposit completed successfully!");
+    println!("💰 New Gas Tank balance: {} wei ({:.6} ETH)", new_balance, u256_to_eth(new_balance));
+    
+    Ok(())
+}
+
+/// Complete account closure
+async fn close_account(client: &DABuilderClient) -> Result<(), Box<dyn std::error::Error>> {
+    println!("🔒 Completing Account Closure");
+    println!("=============================");
+    
+    // Check current status
+    match client.check_withdrawal_initiated().await {
+        Ok(withdrawal_initiated) => {
+            if !withdrawal_initiated {
+                println!("❌ No withdrawal initiated for this account");
+                println!("   Use 'cargo run initiate-close' to start the process");
+                return Ok(());
+            }
+            
+            match client.can_close_account().await {
+                Ok(can_close) => {
+                    if !can_close {
+                        println!("⏳ 7-day withdrawal period not yet passed");
+                        println!("   Account is still in withdrawal period");
+                        return Ok(());
+                    }
+                    
+                    println!("✅ 7-day withdrawal period has passed");
+                    println!("📋 Completing account closure...");
+                    
+                    let close_tx = client.close_account().await?;
+                    handle_transaction_receipt(close_tx, "Account close").await?;
+                    
+                    // Check balance after recovery
+                    let balance = client.get_balance(client.address()).await?;
+                    println!("✅ Account closed successfully!");
+                    println!("💰 Recovered balance: {} wei ({:.6} ETH)", balance, u256_to_eth(balance));
+                }
+                Err(e) => {
+                    eprintln!("❌ Failed to check if account can be closed: {e}");
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("❌ Failed to check withdrawal status: {e}");
+        }
+    }
+    
+    Ok(())
+}
+
+/// Helper function to handle transaction receipts and check for failures
+async fn handle_transaction_receipt(
+    pending_tx: alloy_provider::PendingTransactionBuilder<alloy_network::Ethereum>,
+    operation_name: &str,
+) -> Result<TransactionReceipt, Box<dyn std::error::Error>> {
+    let receipt = pending_tx.get_receipt().await?;
+    
+    // Check if the transaction succeeded
+    if !receipt.status() {
+        return Err(format!(
+            "❌ {} failed - transaction reverted. Transaction hash: {}",
+            operation_name, receipt.transaction_hash
+        ).into());
+    }
+    
+    println!("✅ {} completed successfully: {}", operation_name, receipt.transaction_hash);
+    Ok(receipt)
+}

@@ -273,10 +273,13 @@ impl DABuilderClient {
         // Get current nonce
         let nonce = self.provider.get_transaction_count(self.address).await?;
         
-        // Create the initiate close transaction manually
+        // Use the generated contract bindings for type-safe function encoding
+        let call_data = IGasTank::initiateAccountCloseCall {}.abi_encode();
+        
+        // Create the initiate close transaction
         let tx = TransactionRequest::default()
             .with_to(self.gas_tank_address)
-            .with_input(Bytes::from([0x3d, 0x18, 0xdf, 0x91])) // initiateAccountClose() selector
+            .with_input(Bytes::from(call_data))
             .with_gas_limit(100_000)
             .with_max_fee_per_gas(20_000_000_000u128) // 20 gwei
             .with_max_priority_fee_per_gas(2_000_000_000u128) // 2 gwei
@@ -292,15 +295,15 @@ impl DABuilderClient {
         // Get current nonce
         let nonce = self.provider.get_transaction_count(self.address).await?;
         
-        // Encode the closeAccount function call
-        let mut data = vec![0x4d, 0x5c, 0x9f, 0x5c]; // closeAccount(address) selector
-        data.extend_from_slice(&[0u8; 32]); // offset to address (32 bytes)
-        data.extend_from_slice(self.address.into_word().as_slice()); // operator address (padded to 32 bytes)
+        // Use the generated contract bindings for type-safe function encoding
+        let call_data = IGasTank::closeAccountCall {
+            _operator: self.address,
+        }.abi_encode();
         
-        // Create the close account transaction manually
+        // Create the close account transaction
         let tx = TransactionRequest::default()
             .with_to(self.gas_tank_address)
-            .with_input(Bytes::from(data))
+            .with_input(Bytes::from(call_data))
             .with_gas_limit(100_000)
             .with_max_fee_per_gas(20_000_000_000u128) // 20 gwei
             .with_max_priority_fee_per_gas(2_000_000_000u128) // 2 gwei
