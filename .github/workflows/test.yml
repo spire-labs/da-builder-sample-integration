@@ -1,15 +1,17 @@
 name: CI
 
+# Runs on push, pull requests, and manual dispatch
 on:
   push:
   pull_request:
   workflow_dispatch:
 
+# Environment variables for Foundry
 env:
   FOUNDRY_PROFILE: ci
 
 jobs:
-  check:
+  foundry:
     name: Foundry project
     runs-on: ubuntu-latest
     steps:
@@ -38,3 +40,37 @@ jobs:
         run: |
           forge test -vvv
         id: test
+
+  rust:
+    name: Rust project
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Show Rust version
+        run: |
+          rustc --version
+          cargo --version
+
+      - name: Run Cargo check
+        run: |
+          cargo check
+
+      - name: Run Cargo tests
+        run: |
+          cargo test --verbose
+
+      - name: Run Cargo clippy
+        run: |
+          cargo clippy -- -D warnings
