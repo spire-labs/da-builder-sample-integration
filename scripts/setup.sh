@@ -25,6 +25,7 @@ echo "✅ Prerequisites check passed"
 # Install dependencies and build
 echo "📦 Installing dependencies and building..."
 forge install
+echo "🔨 Building Solidity contracts and generating Rust bindings..."
 cargo build --release
 
 echo "✅ Setup complete!"
@@ -49,9 +50,7 @@ echo ""
 echo "   For Mainnet:"
 echo "   export PRIVATE_KEY=\"your_private_key_here\""
 echo "   export TARGET_CHAIN=\"mainnet\""
-echo "   export RPC_URL=\"your_mainnet_rpc_endpoint\" # REQUIRED for mainnet"
-echo "   export GAS_TANK_ADDRESS=\"0x...\"           # Optional override"
-echo "   export PROPOSER_MULTICALL_ADDRESS=\"0x...\" # Optional override"
+echo "   export RPC_URL=\"your_non-da-builder_mainnet_rpc_endpoint\" # REQUIRED for mainnet"
 echo ""
 echo "4. Run the integration:"
 echo "   cargo run --release" 

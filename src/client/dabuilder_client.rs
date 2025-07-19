@@ -215,6 +215,7 @@ impl DABuilderClient {
 
     /// Send a regular transaction through the standard RPC
     /// Returns a PendingTransactionBuilder that can be awaited for receipt
+    #[allow(dead_code)]
     pub async fn send_transaction(
         &self,
         target: Address,

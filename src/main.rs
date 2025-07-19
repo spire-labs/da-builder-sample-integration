@@ -23,14 +23,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load configuration
     let (rpc_url, private_key, chain_id, da_builder_rpc_url, gas_tank_address, proposer_multicall_address) = load_configuration()?;
 
-    println!("Configuration:");
-    println!("  RPC URL: {}", rpc_url);
-    println!("  DA Builder RPC URL: {}", da_builder_rpc_url);
-    println!("  Target Chain: {} (Chain ID: {})", env::var("TARGET_CHAIN").unwrap_or_else(|_| "hoodi".to_string()), chain_id);
-    println!("  Gas Tank: {}", gas_tank_address);
-    println!("  ProposerMulticall: {}", proposer_multicall_address);
-    println!();
-
     // Create the DA Builder client
     let client = match DABuilderClient::new(&rpc_url, &private_key, chain_id, gas_tank_address) {
         Ok(client) => {
@@ -56,7 +48,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = configure_da_builder_rpc(client, &da_builder_rpc_url).await?;
     let inbox_address = deploy_mock_inbox(&client).await?;
     submit_da_builder_transactions(&client, inbox_address).await?;
-    demonstrate_regular_transaction(&client, inbox_address).await?;
     monitor_onchain_execution(&client).await?;
     demonstrate_account_closing(&client).await?;
 
@@ -163,12 +154,12 @@ fn prompt_user_confirmation(
     println!("  ProposerMulticall: {}", proposer_multicall_address);
     println!("  Wallet Address: {}", client.address());
     println!();
-    println!("⚠️  This will execute all integration steps including:");
+    println!("⚠️  This will execute all DA Builder integration steps including:");
     println!("   • Gas Tank withdrawal recovery check");
     println!("   • TrustlessProposer deployment");
     println!("   • EIP-7702 account code setup");
     println!("   • Gas Tank balance management");
-    println!("   • DA Builder transaction submission");
+    println!("   • DA Builder transaction submission (regular + blob)");
     println!("   • Account closure initiation");
     println!();
     
@@ -518,39 +509,9 @@ async fn submit_da_builder_transactions(client: &DABuilderClient, inbox_address:
     Ok(())
 }
 
-/// Step 8: Demonstrate regular transaction (for comparison)
-async fn demonstrate_regular_transaction(client: &DABuilderClient, inbox_address: Address) -> Result<(), Box<dyn std::error::Error>> {
-    println!("\nStep 8: Demonstrating regular transaction");
-    println!("----------------------------------------");
-    
-    let regular_target = inbox_address;
-    
-    // Create function call data for MockInbox.getMessageCount()
-    let get_count_function_selector = MockInbox::getMessageCountCall::SELECTOR;
-    let regular_data = get_count_function_selector.to_vec();
-    let regular_value = U256::ZERO;
-    
-    println!("Sending regular transaction for comparison:");
-    println!("  Target: {}", regular_target);
-    println!("  Data: 0x{}", hex::encode(&regular_data));
-    println!("  Value: {}", regular_value);
-    
-    match client.send_transaction(regular_target, alloy::primitives::Bytes::from(regular_data), regular_value).await {
-        Ok(pending_tx) => {
-            let receipt = pending_tx.get_receipt().await?;
-            println!("✅ Regular transaction confirmed: {}", receipt.transaction_hash);
-        }
-        Err(e) => {
-            println!("⚠️  Regular transaction failed (expected if no funds): {}", e);
-        }
-    }
-    
-    Ok(())
-}
-
-/// Step 9: Monitor on-chain execution
+/// Step 8: Monitor on-chain execution
 async fn monitor_onchain_execution(client: &DABuilderClient) -> Result<(), Box<dyn std::error::Error>> {
-    println!("\nStep 9: Monitoring on-chain execution");
+    println!("\nStep 8: Monitoring on-chain execution");
     println!("-------------------------------------");
     println!("✅ All transactions have been submitted and confirmed");
     println!("The DA Builder service has executed the transactions on-chain");
@@ -561,9 +522,9 @@ async fn monitor_onchain_execution(client: &DABuilderClient) -> Result<(), Box<d
     Ok(())
 }
 
-/// Step 10: Demonstrate account closing
+/// Step 9: Demonstrate account closing
 async fn demonstrate_account_closing(client: &DABuilderClient) -> Result<(), Box<dyn std::error::Error>> {
-    println!("\nStep 10: Demonstrating Account Closing");
+    println!("\nStep 9: Demonstrating Account Closing");
     println!("--------------------------------------");
     
     println!("Initiating account close...");
@@ -589,11 +550,9 @@ fn print_completion_summary(client: &DABuilderClient) {
     println!("✅ Regular transaction submitted to DA Builder");
     println!("✅ Blob transaction submitted to DA Builder");
     println!("✅ All transactions confirmed on-chain");
-    println!("✅ Regular transaction demonstrated");
     println!("✅ Account closure initiated");
     println!();
     println!("Library Features Demonstrated:");
-    println!("  • send_transaction() - Regular transactions (uses regular RPC)");
     println!("  • send_da_builder_transaction() - DA Builder transactions with automatic EIP-712 signing");
     println!("  • Automatic provider selection based on transaction type");
     println!("  • Configurable deadlines for EIP-712 signatures");

@@ -125,6 +125,7 @@ export PROPOSER_MULTICALL_ADDRESS="0x..."                       # Optional overr
 
 4. **Get testnet ETH:**
    - **Hoodi**: https://hoodi-faucet.pk910.de/
+   - **Holesky**: https://holesky-faucet.pk910.de/
 
 ### 5. Deploy Contracts and Run Integration
 
@@ -134,7 +135,12 @@ Deploy the necessary contracts and run the complete integration using the Rust C
 cargo run --release
 ```
 
-This single command will:
+**🚀 Automatic Build Process:** The build system will automatically:
+1. **Compile Solidity contracts** with `forge build` (if artifacts don't exist)
+2. **Generate Rust bindings** from the compiled contracts
+3. **Compile the Rust application**
+
+This single command will then:
 - Deploy the TrustlessProposer contract
 - Set up EIP-7702 account code
 - Deposit funds into the GasTank
@@ -144,7 +150,7 @@ This single command will:
 
 ### 6. Verify on Etherscan
 
-1. Go to [Hoodi Etherscan](https://hoodi.etherscan.io/)
+1. Go to [Hoodi Etherscan](https://hoodi.etherscan.io/) or [Hoodi Blockscout](https://eth-hoodi.blockscout.com/)
 2. Search for your wallet address
 3. Check the transaction history
 4. Verify the calls to the GasTank and other contracts
@@ -168,6 +174,23 @@ forge test
 # Run Rust tests
 cargo test
 ```
+
+## 🔨 Build Process
+
+The project uses a custom build script (`build.rs`) that automatically handles the Solidity-to-Rust binding generation:
+
+### Automatic Build Flow
+1. **`cargo build`** triggers the build script
+2. **Build script runs** `forge build` automatically
+3. **Forge handles dependency checking** and only rebuilds what's necessary
+4. **Generates Rust bindings** from the compiled contract artifacts
+5. **Creates `src/generated_contracts.rs`** with Alloy `sol!` macro bindings
+
+This build script may have some limitations regarding its ability to generate bindings. It currently only generates bindings for the contracts in the `src/interfaces`, `src/mocks`, and `src/proposers` directories but could easily be modified to include others. `forge bind` might be a better option for more complex projects.
+
+### Build Artifacts
+- **`out/`**: Forge compilation artifacts (JSON files with ABI and bytecode)
+- **`src/generated_contracts.rs`**: Auto-generated Rust bindings using Alloy's `sol!` macro
 
 ## 🔄 Integration Steps
 

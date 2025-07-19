@@ -1,10 +1,29 @@
 use std::fs;
 use std::path::Path;
+use std::process::Command;
 use serde_json::Value;
 
 fn main() {
     println!("cargo:rerun-if-changed=out/");
     println!("cargo:rerun-if-changed=src/");
+
+    // Always run forge build - it handles its own dependency checking
+    println!("cargo:warning=Running 'forge build'...");
+    let status = Command::new("forge")
+        .arg("build")
+        .status();
+    
+    match status {
+        Ok(exit_status) => {
+            if !exit_status.success() {
+                panic!("Failed to run 'forge build'. Make sure Foundry is installed and you're in the project root.");
+            }
+            println!("cargo:warning=Forge build completed successfully.");
+        }
+        Err(e) => {
+            panic!("Failed to execute 'forge build': {}. Make sure Foundry is installed and available in PATH.", e);
+        }
+    }
 
     // Folders to scan
     let folders = ["src/proposers", "src/mocks", "src/interfaces"];

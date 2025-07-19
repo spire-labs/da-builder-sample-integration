@@ -5,11 +5,11 @@ import "../interfaces/IProposer.sol";
 
 /// @title OPStackProposer
 ///
-/// @dev An example implementation of a proposer contract that is compatible with the aggregation service
+/// @dev An UNSAFE example implementation of a proposer contract that is compatible with the aggregation service
 ///      Intended to be set as an EOA account code (EIP-7702)
 ///      This contract is meant to be an example implementation, and is stateless for the sake of simple storage management
 ///
-/// @dev This version is an example of how an OPStackProposer would be implemented
+/// @dev This version is an UNSAFE example of how an OPStackProposer would be implemented
 ///      Requires custom encoding of calldata before submitting to DA Builder
 contract OPStackProposer is IProposer {
     /// @notice Event emitted when a blob is submitted
