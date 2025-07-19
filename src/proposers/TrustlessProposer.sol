@@ -68,7 +68,9 @@ contract TrustlessProposer is IProposer, EIP712 layout at 25_732_701_950_170_629
         view
         returns (bytes32)
     {
-        return _hashTypedDataV4(keccak256(abi.encode(CALL_TYPEHASH, _deadline, _nonce, _target, _value, keccak256(_calldata))));
+        return _hashTypedDataV4(
+            keccak256(abi.encode(CALL_TYPEHASH, _deadline, _nonce, _target, _value, keccak256(_calldata)))
+        );
     }
 
     receive() external payable {}
