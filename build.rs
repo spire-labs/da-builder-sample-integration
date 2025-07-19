@@ -4,13 +4,32 @@ use std::process::Command;
 use serde_json::Value;
 
 fn main() {
+    // Monitor out/ directory for Forge artifact changes
     println!("cargo:rerun-if-changed=out/");
-    println!("cargo:rerun-if-changed=src/");
+
+    // Directories to scan for Solidity contracts
+    let contract_dirs = [
+        "src/proposers/",
+        "src/mocks/",
+        "src/interfaces/",
+        // Easy to add new directories here:
+        // "src/new_contracts/",
+    ];
+
+    // Set up cargo rerun-if-changed for contract directories
+    for dir in &contract_dirs {
+        println!("cargo:rerun-if-changed={}", dir);
+    }
 
     // Always run forge build - it handles its own dependency checking
     println!("cargo:warning=Running 'forge build'...");
+    
+    // Get the project root directory (where Cargo.toml is located)
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+    
     let status = Command::new("forge")
         .arg("build")
+        .current_dir(&manifest_dir) // Ensure forge runs in project root
         .status();
     
     match status {
@@ -25,8 +44,10 @@ fn main() {
         }
     }
 
-    // Folders to scan
-    let folders = ["src/proposers", "src/mocks", "src/interfaces"];
+    // Folders to scan (remove trailing slash for file system operations)
+    let folders: Vec<&str> = contract_dirs.iter()
+        .map(|dir| dir.trim_end_matches('/')) // Remove trailing slash
+        .collect();
     let mut contracts = Vec::new();
 
     for folder in &folders {

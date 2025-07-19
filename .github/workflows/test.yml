@@ -11,38 +11,8 @@ env:
   FOUNDRY_PROFILE: ci
 
 jobs:
-  foundry:
-    name: Foundry project
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
-
-      - name: Show Forge version
-        run: |
-          forge --version
-
-      - name: Run Forge fmt
-        run: |
-          forge fmt --check
-        id: fmt
-
-      - name: Run Forge build
-        run: |
-          forge build --sizes
-        id: build
-
-      - name: Run Forge tests
-        run: |
-          forge test -vvv
-        id: test
-
-  rust:
-    name: Rust project
+  test:
+    name: Build and Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -58,10 +28,19 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
 
-      - name: Show Rust version
+      - name: Show versions
         run: |
           rustc --version
           cargo --version
+          forge --version
+
+      - name: Run Forge fmt
+        run: |
+          forge fmt --check
+
+      - name: Run Forge tests
+        run: |
+          forge test -vvv
 
       - name: Run Cargo check
         run: |
