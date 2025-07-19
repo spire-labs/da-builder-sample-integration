@@ -18,7 +18,7 @@ fn main() {
 
     // Set up cargo rerun-if-changed for contract directories
     for dir in &contract_dirs {
-        println!("cargo:rerun-if-changed={}", dir);
+        println!("cargo:rerun-if-changed={dir}");
     }
 
     // Always run forge build - it handles its own dependency checking
@@ -40,7 +40,7 @@ fn main() {
             println!("cargo:warning=Forge build completed successfully.");
         }
         Err(e) => {
-            panic!("Failed to execute 'forge build': {}. Make sure Foundry is installed and available in PATH.", e);
+            panic!("Failed to execute 'forge build': {e}. Make sure Foundry is installed and available in PATH.");
         }
     }
 
@@ -77,13 +77,13 @@ fn main() {
     // Generate bytecode constants first (only for contracts with actual bytecode)
     let mut bytecode_constants = String::new();
     for (contract_name, file_name) in &contracts {
-        let artifact_path = format!("out/{}/{}.json", file_name, contract_name);
+        let artifact_path = format!("out/{file_name}/{contract_name}.json");
         if !Path::new(&artifact_path).exists() {
-            println!("cargo:warning=Artifact not found for {}. Run 'forge build' first.", contract_name);
+            println!("cargo:warning=Artifact not found for {contract_name}. Run 'forge build' first.");
             continue;
         }
         let content = fs::read_to_string(&artifact_path)
-            .unwrap_or_else(|_| panic!("Failed to read artifact: {}", artifact_path));
+            .unwrap_or_else(|_| panic!("Failed to read artifact: {artifact_path}"));
         let artifact: Value = serde_json::from_str(&content).unwrap();
         let bytecode = artifact["bytecode"]["object"].as_str().unwrap_or("");
         
@@ -103,16 +103,16 @@ fn main() {
     
     // Generate sol! macros for all contracts/interfaces
     for (contract_name, file_name) in &contracts {
-        let artifact_path = format!("out/{}/{}.json", file_name, contract_name);
+        let artifact_path = format!("out/{file_name}/{contract_name}.json");
         if !Path::new(&artifact_path).exists() {
             continue;
         }
         let content = fs::read_to_string(&artifact_path)
-            .unwrap_or_else(|_| panic!("Failed to read artifact: {}", artifact_path));
+            .unwrap_or_else(|_| panic!("Failed to read artifact: {artifact_path}"));
         let artifact: Value = serde_json::from_str(&content).unwrap();
         let abi = &artifact["abi"];
         
-        sol_macros.push_str(&format!("// {} contract interface\n", contract_name));
+        sol_macros.push_str(&format!("// {contract_name} contract interface\n"));
         sol_macros.push_str(&format!("sol! {{\n    #[sol(rpc)]\n    contract {} {{\n{}    }}\n}}\n\n", contract_name, abi_to_sol_functions(abi)));
     }
     
