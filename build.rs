@@ -77,7 +77,7 @@ fn main() {
     if !bytecode_constants.is_empty() {
         sol_macros.push_str("// Contract bytecode constants\n");
         sol_macros.push_str(&bytecode_constants);
-        sol_macros.push_str("\n");
+        sol_macros.push('\n');
     }
     
     // Generate sol! macros for all contracts/interfaces
@@ -173,7 +173,7 @@ fn abi_item_to_sol_function(item: &Value) -> Option<String> {
     }
     // Add return type
     if outputs.is_empty() {
-        function.push_str(";");
+        function.push(';');
     } else if outputs.len() == 1 {
         let output_type = outputs[0]["type"].as_str().unwrap_or("uint256");
         function.push_str(&format!("returns ({output_type});"));
@@ -208,11 +208,11 @@ fn abi_item_to_sol_event(item: &Value) -> Option<String> {
         })
         .collect();
     event.push_str(&input_params.join(", "));
-    event.push_str(")");
+    event.push(')');
     if anonymous {
         event.push_str(" anonymous");
     }
-    event.push_str(";");
+    event.push(';');
     Some(event)
 }
 

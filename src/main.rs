@@ -2,7 +2,6 @@ use alloy::primitives::{Address, U256};
 use alloy_rpc_types::{TransactionRequest, TransactionInput};
 use alloy::primitives::TxKind;
 use alloy_network::TransactionBuilder4844;
-
 use alloy_dyn_abi::DynSolValue;
 use alloy_sol_types::SolCall;
 mod client;
@@ -13,6 +12,8 @@ use alloy::primitives::Bytes;
 // Use the auto-generated contract bindings from build.rs
 mod generated_contracts;
 use generated_contracts::*;
+
+type ConfigTuple = (String, String, u64, String, Address, Address);
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -64,7 +65,7 @@ fn u256_to_eth(u: U256) -> f64 {
 }
 
 /// Load and validate configuration from environment variables
-fn load_configuration() -> Result<(String, String, u64, String, Address, Address), Box<dyn std::error::Error>> {
+fn load_configuration() -> Result<ConfigTuple, Box<dyn std::error::Error>> {
     // Get target chain configuration first
     let target_chain = env::var("TARGET_CHAIN").unwrap_or_else(|_| "hoodi".to_string());
     

@@ -295,7 +295,7 @@ impl DABuilderClient {
         // Encode the closeAccount function call
         let mut data = vec![0x4d, 0x5c, 0x9f, 0x5c]; // closeAccount(address) selector
         data.extend_from_slice(&[0u8; 32]); // offset to address (32 bytes)
-        data.extend_from_slice(&self.address.into_word().as_slice()); // operator address (padded to 32 bytes)
+        data.extend_from_slice(self.address.into_word().as_slice()); // operator address (padded to 32 bytes)
         
         // Create the close account transaction manually
         let tx = TransactionRequest::default()
@@ -402,7 +402,7 @@ impl DABuilderClient {
         let mut input = Vec::with_capacity(85);
         input.push(0xff);
         input.extend_from_slice(factory_address.as_slice()); // Use 20-byte address, not 32-byte word
-        input.extend_from_slice(&salt_bytes32.as_slice());
+        input.extend_from_slice(salt_bytes32.as_slice());
         input.extend_from_slice(init_code_hash.as_slice());
         
         let hash = alloy::primitives::keccak256(input);
@@ -552,11 +552,7 @@ impl DABuilderClient {
     /// Handles 0x prefix removal and ABI encoding of constructor arguments
     fn prepare_bytecode_with_args(&self, bytecode: &str, constructor_args: &[DynSolValue]) -> Result<Vec<u8>> {
         // Remove 0x prefix if present
-        let clean_bytecode = if bytecode.starts_with("0x") {
-            &bytecode[2..]
-        } else {
-            bytecode
-        };
+        let clean_bytecode = bytecode.strip_prefix("0x").unwrap_or(bytecode);
         
         // Decode hex bytecode
         let mut bytecode_bytes = hex::decode(clean_bytecode)?;
@@ -565,8 +561,7 @@ impl DABuilderClient {
         if !constructor_args.is_empty() {
             // Use standard ABI encoding for constructor arguments (not tuple encoding)
             let encoded_args: Vec<u8> = constructor_args.iter()
-                .map(|arg| arg.abi_encode())
-                .flatten()
+                .flat_map(|arg| arg.abi_encode())
                 .collect();
             bytecode_bytes.extend_from_slice(&encoded_args);
         }
@@ -611,7 +606,7 @@ impl DABuilderClient {
         
         // EIP-7702 sets code to 0xef0100 + proposer_address (23 bytes)
         let delegation_prefix: [u8; 3] = [0xef, 0x01, 0x00];
-        let expected_code = [delegation_prefix.as_slice(), &proposer_address.to_vec()].concat();
+        let expected_code = [delegation_prefix.as_slice(), proposer_address.as_ref()].concat();
         
         // Compare actual code with expected delegation
         let is_correct_proposer = account_code.to_vec() == expected_code;
