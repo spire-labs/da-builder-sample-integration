@@ -195,19 +195,23 @@ impl DABuilderClient {
         let trustless_proposer = TrustlessProposer::new(self.address, da_provider);
         // Since we are using TrustlessProposer, the value can be set to 0 since the encoded call is what carries the value that would be sent to the true target
         let trustless_proposer_tx_request = trustless_proposer.call(target, encoded_call, U256::ZERO).into_transaction_request();
-
-        // Create the transaction based on whether blob data is provided
-        let tx = if has_blob_data {
-            // EIP-4844 blob transaction - use the existing sidecar from the request
-            let sidecar = blob_sidecar.unwrap();
-            
-            // Create EIP-4844 transaction with blob sidecar
-            trustless_proposer_tx_request.with_blob_sidecar(sidecar)
-        } else {
-            // Regular transaction
-            trustless_proposer_tx_request
-        };
         
+        // Pull transaction parameters from the original transaction request
+        let nonce = self.provider.get_transaction_count(self.address).await?;
+        let gas_estimate = self.provider.estimate_gas(trustless_proposer_tx_request.clone()).await.unwrap_or(200_000);
+
+        let mut tx = trustless_proposer_tx_request
+            .with_nonce(nonce)
+            .with_gas_limit(gas_estimate)
+            .with_chain_id(self.chain_id)
+            .with_max_fee_per_gas(transaction_request.max_fee_per_gas.unwrap_or(20_000_000_000u128))
+            .with_max_priority_fee_per_gas(transaction_request.max_priority_fee_per_gas.unwrap_or(2_000_000_000u128));
+            
+        if has_blob_data {
+            tx = tx.with_blob_sidecar(blob_sidecar.unwrap())
+                .with_max_fee_per_blob_gas(transaction_request.max_fee_per_blob_gas.unwrap_or(15_000_000_000u128));
+        }
+
         // Send the transaction and return the pending transaction
         let pending_tx = da_provider.send_transaction(tx).await?;
         Ok(pending_tx)
