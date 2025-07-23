@@ -3,7 +3,6 @@ pragma solidity 0.8.30;
 
 import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import "../interfaces/IProposer.sol";
-import "forge-std/console.sol";
 
 /// @title TrustlessProposer
 /// @notice A secure proposer implementation that requires cryptographic signatures
@@ -17,9 +16,17 @@ contract TrustlessProposer is IProposer, EIP712 layout at 25_732_701_950_170_629
     bytes32 public constant CALL_TYPEHASH =
         keccak256("Call(uint256 deadline,uint256 nonce,address target,uint256 value,bytes calldata)");
 
+    /// @notice The address of the proposer multicall contract
     address public immutable PROPOSER_MULTICALL;
+
+    /// @notice A separate nonce for nested calls from external callers
+    ///
+    /// @dev Nonce is used as a uint256 instead of a mapping for gas reasons
     uint256 public nestedNonce;
 
+    /// @notice Constructor
+    ///
+    /// @param _proposerMulticall The address of the proposer multicall contract
     constructor(address _proposerMulticall) EIP712("TrustlessProposer", "1") {
         PROPOSER_MULTICALL = _proposerMulticall;
     }
@@ -36,7 +43,7 @@ contract TrustlessProposer is IProposer, EIP712 layout at 25_732_701_950_170_629
 
         // Create the EIP-712 message hash
         bytes32 _structHash =
-            keccak256(abi.encode(CALL_TYPEHASH, _deadline, _nonce, _target, _value, keccak256(_calldata)));
+            keccak256(abi.encode(CALL_TYPEHASH, _deadline, _nonce, _target, _value, _calldata));
         bytes32 _messageHash = _hashTypedDataV4(_structHash);
 
         // Extract signature components

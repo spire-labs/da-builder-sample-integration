@@ -23,7 +23,7 @@ type NestedSignedCall = sol! { tuple(bytes, uint256, uint256, bytes) };
 
 // EIP-712 types for TrustlessProposer
 type Eip712Domain = sol! { tuple(bytes32, bytes32, bytes32, uint256, address) };
-type MessageStruct = sol! { tuple(bytes32, uint256, uint256, address, uint256, bytes32) };
+type MessageStruct = sol! { tuple(bytes32, uint256, uint256, address, uint256, bytes) };
 use eyre::Result;
 use url::Url;
 
@@ -689,7 +689,7 @@ impl DABuilderClient {
         let call_type_hash = alloy::primitives::keccak256("Call(uint256 deadline,uint256 nonce,address target,uint256 value,bytes calldata)");
         
         // Hash the call data
-        let call_data_hash = alloy::primitives::keccak256(call_data.as_ref());
+        // let call_data_hash = alloy::primitives::keccak256(call_data.as_ref());
         
         // Encode the struct hash (includes the call type hash as first parameter)
         let call_struct_value = MessageStruct::abi_encode_sequence(&(
@@ -698,7 +698,7 @@ impl DABuilderClient {
             nonce,
             target,
             value,
-            call_data_hash,
+            call_data,
         ));
         let message_hash = alloy::primitives::keccak256(call_struct_value);
         
