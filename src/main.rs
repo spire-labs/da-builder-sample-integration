@@ -390,10 +390,10 @@ async fn check_and_deposit_to_gas_tank(client: &DABuilderClient) -> Result<(), B
     let gas_tank_balance = client.gas_tank_balance().await?;
     println!("Current Gas Tank balance: {} wei ({:.6} ETH)", gas_tank_balance, u256_to_eth(gas_tank_balance));
     
-    let min_balance = U256::from(10000000000000000u64); // 0.01 ETH
+    let min_balance = U256::from(100000000000000000u64); // 0.1 ETH
     if gas_tank_balance < min_balance {
         println!("⚠️  Low Gas Tank balance detected, depositing funds...");
-        let deposit_amount = U256::from(10000000000000000u64); // 0.01 ETH
+        let deposit_amount = U256::from(100000000000000000u64); // 0.1 ETH
         let deposit_tx = client.deposit_to_gas_tank(deposit_amount).await?;
         handle_transaction_receipt(deposit_tx, "Gas Tank deposit").await?;
         
