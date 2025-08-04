@@ -19,11 +19,37 @@ use alloy::{
     sol_types::SolType,
 };
 
-type NestedSignedCall = sol! { tuple(bytes, uint256, uint256, bytes) };
+type NestedSignedCalldata = sol! { 
+    tuple(
+        bytes,    // signature
+        uint256,  // deadline
+        uint256,  // nonce
+        bytes,    // calldata
+        uint256   // gas_limit
+    ) 
+};
 
 // EIP-712 types for TrustlessProposer
-type Eip712Domain = sol! { tuple(bytes32, bytes32, bytes32, uint256, address) };
-type MessageStruct = sol! { tuple(bytes32, uint256, uint256, address, uint256, bytes) };
+type Eip712Domain = sol! { 
+    tuple(
+        bytes32,  // type_hash
+        bytes32,  // hashed_name
+        bytes32,  // hashed_version
+        uint256,  // chain_id
+        address   // contract_address
+    ) 
+};
+type MessageStruct = sol! { 
+    tuple(
+        bytes32,  // call_type_hash
+        uint256,  // deadline
+        uint256,  // nonce
+        address,  // target
+        uint256,  // value
+        bytes,    // calldata
+        uint256   // gas_limit
+    ) 
+};
 use eyre::Result;
 use url::Url;
 
@@ -185,12 +211,18 @@ impl DABuilderClient {
         
         let value = transaction_request.value.unwrap_or(U256::ZERO);
         
+        // Get gas limit from transaction request for the signed call
+        let gas_limit = transaction_request.gas
+            .map(|g| U256::from(g))
+            .unwrap_or(U256::from(200_000)); // Default if not specified
+        
         // Prepare the EIP-712 signed call data
         let encoded_call = self.prepare_trustless_proposer_call(
             target,
             call_data,
             value,
             deadline_secs,
+            gas_limit,
         ).await?;
         let trustless_proposer = TrustlessProposer::new(self.address, da_provider);
         // Since we are using TrustlessProposer, the value can be set to 0 since the encoded call is what carries the value that would be sent to the true target
@@ -621,7 +653,7 @@ impl DABuilderClient {
         Ok((has_code, is_correct_proposer))
     }
 
-    /// Prepare the ABI-encoded TrustlessProposer call (EIP-712 signature, deadline, nonce, calldata)
+    /// Prepare the ABI-encoded TrustlessProposer call (EIP-712 signature, deadline, nonce, calldata, gasLimit)
     /// Uses Alloy's EIP-712 implementation for reliable hashing and encoding
     pub async fn prepare_trustless_proposer_call(
         &self,
@@ -629,6 +661,7 @@ impl DABuilderClient {
         call_data: Bytes,
         value: U256,
         deadline_secs: u64,
+        gas_limit: U256,
     ) -> Result<Bytes> {
         let nonce = self.get_proposer_nonce().await?;
         let deadline = U256::from(deadline_secs);
@@ -640,22 +673,24 @@ impl DABuilderClient {
             target,
             value,
             call_data.clone(),
+            gas_limit,
         )?;
 
         // @note Instead of using alloy to generate the message hash we can also use the contract's getMessageHash to avoid
         // issues with different contract versions changing the eip712 domain separator of course at the cost of a network call
         // let contract = TrustlessProposer::new(proposer_addr, &self.provider);
-        // let message_hash = contract.getMessageHash(deadline, nonce, target, value, call_data.clone()).call().await?;
+        // let message_hash = contract.getMessageHash(deadline, nonce, target, value, call_data.clone(), gas_limit).call().await?;
 
         // Sign the message hash
         let signature = self.wallet.sign_hash(&message_hash).await?;
 
         // Create the tuple and encode it using Alloy's sol! macro
-        let alloy_encoded = NestedSignedCall::abi_encode_sequence(&(
+        let alloy_encoded = NestedSignedCalldata::abi_encode_sequence(&(
             Bytes::from(signature.as_bytes()),
             deadline,
             nonce,
             call_data,
+            gas_limit,
         ));
         
         Ok(Bytes::from(alloy_encoded))
@@ -670,6 +705,7 @@ impl DABuilderClient {
         target: Address,
         value: U256,
         call_data: Bytes,
+        gas_limit: U256,
     ) -> Result<alloy::primitives::B256> {
         // EIP-712 domain separator (matches OpenZeppelin's _buildDomainSeparator)
         let type_hash = alloy::primitives::keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
@@ -686,10 +722,7 @@ impl DABuilderClient {
         let domain_separator = alloy::primitives::keccak256(domain_value);
         
         // Call type hash
-        let call_type_hash = alloy::primitives::keccak256("Call(uint256 deadline,uint256 nonce,address target,uint256 value,bytes calldata)");
-        
-        // Hash the call data
-        // let call_data_hash = alloy::primitives::keccak256(call_data.as_ref());
+        let call_type_hash = alloy::primitives::keccak256("Call(uint256 deadline,uint256 nonce,address target,uint256 value,bytes calldata,uint256 gasLimit)");
         
         // Encode the struct hash (includes the call type hash as first parameter)
         let call_struct_value = MessageStruct::abi_encode_sequence(&(
@@ -699,6 +732,7 @@ impl DABuilderClient {
             target,
             value,
             call_data,
+            gas_limit,
         ));
         let message_hash = alloy::primitives::keccak256(call_struct_value);
         
@@ -711,7 +745,6 @@ impl DABuilderClient {
         
         Ok(eip712_hash)
     }
-
 
 } 
 

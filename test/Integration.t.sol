@@ -60,7 +60,7 @@ contract IntegrationTest is Test {
         console.log("User code length:", user.code.length);
 
         // Create properly signed data for TrustlessProposer
-        bytes memory signedData = createTrustlessProposerData(user, target, data, 0);
+        bytes memory signedData = createTrustlessProposerData(user, target, data, 0, 200_000);
 
         vm.prank(PROPOSER_MULTICALL);
         bool success = IProposer(user).call(target, signedData, 0);
@@ -72,6 +72,25 @@ contract IntegrationTest is Test {
         console.log("TrustlessProposer call successful!");
         console.log("Messages sent:", messageCount);
         console.log("TrustlessProposer test passed!");
+    }
+
+    function testTrustlessProposerRejectsGasLimitExceeded() public {
+        console.log("Testing TrustlessProposer gas limit enforcement");
+        
+        address target = address(inbox);
+        bytes memory data =
+            abi.encodeWithSignature("sendMessage(address,bytes)", address(0x42), abi.encodeWithSignature("increment()"));
+
+        // Create signed data with a very low gas limit that will be exceeded
+        bytes memory signedData = createTrustlessProposerData(user, target, data, 0, 1_000); // Very low gas limit
+        
+        vm.prank(PROPOSER_MULTICALL);
+        
+        // Expect the call to revert with GasLimitExceeded error
+        vm.expectRevert(abi.encodeWithSelector(TrustlessProposer.GasLimitExceeded.selector));
+        IProposer(user).call(target, signedData, 0);
+        
+        console.log("TrustlessProposer gas limit enforcement test passed!");
     }
 
     function testTrustlessProposerRejectsInvalidSignature() public {
@@ -227,7 +246,7 @@ contract IntegrationTest is Test {
      * @dev Create properly signed data for TrustlessProposer
      * This follows the pattern from the DA Builder documentation
      */
-    function createTrustlessProposerData(address eoa, address target, bytes memory callData, uint256 value)
+    function createTrustlessProposerData(address eoa, address target, bytes memory callData, uint256 value, uint256 gasLimit)
         internal
         view
         returns (bytes memory)
@@ -249,12 +268,13 @@ contract IntegrationTest is Test {
         // Create the struct hash
         bytes32 structHash = keccak256(
             abi.encode(
-                keccak256("Call(uint256 deadline,uint256 nonce,address target,uint256 value,bytes calldata)"),
+                keccak256("Call(uint256 deadline,uint256 nonce,address target,uint256 value,bytes calldata,uint256 gasLimit)"),
                 deadline,
                 nonce,
                 target,
                 value,
-                keccak256(callData)
+                callData, // Use callData directly, not keccak256(callData)
+                gasLimit
             )
         );
 
@@ -263,52 +283,6 @@ contract IntegrationTest is Test {
 
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(USER_PRIVATE_KEY, messageHash);
         bytes memory signature = abi.encodePacked(r, s, v);
-        return abi.encode(signature, deadline, nonce, callData);
-    }
-
-    function testTrustlessProposerData() public {
-        bytes32 messageHash = 0x18f93425ecfac0676376823b0e050de636994b3e8c35687c74ae7083849812c9;
-        bytes memory data =
-            hex"000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000687ab10e000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000041ef73a42a19fe7995f42e3aa61df2507806ca70ffc369a5f8dd64841f235266c63f9e8f16c4275b2739f5aa27967ebcccf5deacfb898f88c9f47849de91ac7ac21b000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000084bb5ddb0f00000000000000000000000042424242424242424242424242424242424242420000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000001648656c6c6f2066726f6d204441204275696c646572210000000000000000000000000000000000000000000000000000000000000000000000000000";
-        (bytes memory _sig, uint256 _deadline, uint256 _nonce, bytes memory _calldata) =
-            abi.decode(data, (bytes, uint256, uint256, bytes));
-        console.logBytes(_sig);
-        console.log("deadline: %s", _deadline);
-        console.log("nonce: %s", _nonce);
-        console.logBytes(_calldata);
-
-        console.log("=== Signature Validation ===");
-        console.logBytes(_sig);
-        console.logBytes32(messageHash);
-
-        // Extract signature components (r, s, v)
-        uint8 v;
-        bytes32 r;
-        bytes32 s;
-        assembly {
-            r := mload(add(_sig, 0x20))
-            s := mload(add(_sig, 0x40))
-            v := byte(0, mload(add(_sig, 0x60)))
-        }
-
-        console.log("=== Signature Components ===");
-        console.logBytes32(r);
-        console.logBytes32(s);
-        console.log("v: %s", v);
-
-        // Recover the signer from the signature
-        address recoveredSigner = ecrecover(messageHash, v, r, s);
-        console.log("Recovered signer: %s", recoveredSigner);
-        address expectedSigner = address(0xa5be43129B247AcB30175905D635a39D883602d4);
-        console.log("Expected signer (EOA): %s", expectedSigner);
-
-        // Check if the recovered signer matches the EOA
-        if (recoveredSigner != expectedSigner) {
-            console.log("X Signature invalid! Recovered: %s, Expected: %s", recoveredSigner, expectedSigner);
-            revert("SignatureInvalid");
-        }
-
-        console.log("OK Signature validation passed!");
-        console.log("TrustlessProposer data validation test passed!");
+        return abi.encode(signature, deadline, nonce, callData, gasLimit);
     }
 }
