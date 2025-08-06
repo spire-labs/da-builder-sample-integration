@@ -52,13 +52,13 @@ contract TrustlessProposer is IProposer, EIP712 layout at 25_732_701_950_170_629
         address _signer = getSignerFromSignature(_messageHash, _sig);
         if (_signer != address(this)) revert SignatureInvalid();
 
+        nestedNonce++;
+
         // Execute the actual call
         (bool _success,) = _target.call{value: _value}(_calldata);
         if (!_success) {
             revert LowLevelCallFailed();
         }
-
-        nestedNonce++;
 
         // If gas used is greater than gasLimit, revert
         if (_startGas - gasleft() > _gasLimit) {
