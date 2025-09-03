@@ -277,8 +277,7 @@ contract IntegrationTest is Test {
                 nonce,
                 target,
                 value,
-                keccak256(callData)
-                ,
+                keccak256(callData),
                 gasLimit
             )
         );
