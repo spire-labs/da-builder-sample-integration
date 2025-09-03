@@ -77,7 +77,7 @@ contract UnsafeProposer is IProposer {
     ///      the builder will ignore the transaction
     /// @dev Has a whitelist check to enforce an authorized caller
     /// @dev Used to allow for contracts to make arbitrary calls for an EOA
-    function call(address _target, bytes calldata _data, uint256 _value) external returns (bool) {
+    function onCall(address _target, bytes calldata _data, uint256 _value) external returns (bool) {
         if (msg.sender != PROPOSER_MULTICALL && address(this) != msg.sender) revert Unauthorized();
 
         (bool _success,) = _target.call{value: _value}(_data);

@@ -16,7 +16,7 @@ This sample integration will help you complete the following objectives:
 4. **Deposit funds** into the GasTank contract
 5. **Submit a transaction** to DA Builder on testnet
 6. **Verify the transaction** onchain showing calls being made to the inbox contract
-7. **Manage account lifecycle** including closure and fund recovery
+7. **View account status** including on-chain balance and off-chain outstanding charges
 8. **Handle transaction failures** with automatic revert detection and clear error reporting
 
 ## 🏗️ Architecture
@@ -76,7 +76,7 @@ graph TB
 ### Features
 
 - **🚀 Full Integration Demo** - Complete DA Builder workflow
-- **📊 Account Management** - Check status, initiate/complete closure
+- **📊 Account Management** - Check status and balances (on-chain + off-chain charges)
 
 ### Setup
 
@@ -142,7 +142,7 @@ The integration provides a flexible CLI with multiple commands for different use
 ```bash
 cargo run --release
 ```
-This runs the complete integration demo with optional account closing.
+This runs the complete integration demo.
 
 #### **Account Management Commands**
 ```bash
@@ -151,12 +151,6 @@ cargo run account-status
 
 # Deposit funds to Gas Tank
 cargo run deposit
-
-# Initiate account closure (7-day withdrawal period)
-cargo run initiate-close
-
-# Complete account closure (after 7-day period)
-cargo run close-account
 
 # Show help and all available commands
 cargo run help
@@ -168,8 +162,6 @@ cargo run help
 | `demo`           | Run the full DA Builder integration demo (default) |
 | `account-status` | Show current account status and Gas Tank balance   |
 | `deposit`        | Deposit funds to Gas Tank                          |
-| `initiate-close` | Initiate account closure (7-day withdrawal period) |
-| `close-account`  | Complete account closure (after 7-day period)      |
 | `help`           | Show help message and all commands                 |
 
 **🚀 Automatic Build Process:** The build system will automatically:
@@ -183,7 +175,6 @@ The full demo will then:
 - Deposit funds into the GasTank
 - Submit a transaction to DA Builder
 - Monitor on-chain execution
-- **Optionally** demonstrate account closing (user choice)
 
 ### 6. Verify on Etherscan
 
@@ -238,41 +229,16 @@ The complete integration performs these steps:
 3. **Deposit into Gas Tank** - Deposit ETH into the DA Builder Gas Tank
 4. **Submit transaction to DA Builder** - Create and submit a transaction
 5. **Monitor execution** - Track the transaction on-chain
-6. **Optional account closing** - Demonstrate account closure and fund withdrawal
+6. **Account status** - Display on-chain balance and off-chain outstanding charges
 
-## 🚪 Account Management & Withdrawal
+## 📊 Account Management (new model)
 
-### Account Lifecycle
-The DA Builder integration includes a complete account management system:
-
-1. **Active Account** - Can perform transactions and deposits
-2. **Withdrawal Initiated** - 7-day waiting period begins
-3. **Ready to Close** - 7-day period completed, can finalize closure
-4. **Closed** - Account closed, funds recovered
-
-### 7-Day Withdrawal Period
-When you initiate account closure:
-- ✅ **Funds are safe** - No one can access your funds during this period
-- ⏳ **7-day waiting period** - Required security measure
-- 🚫 **No new operations** - Account cannot be used for new transactions
-- 💰 **Automatic recovery** - Funds are returned to your wallet after closure
-
-### Account Management Workflow
-```bash
-# 1. Check current status
-cargo run account-status
-
-# 2. Deposit funds (if needed)
-cargo run deposit
-
-# 3. Initiate closure (if desired)
-cargo run initiate-close
-
-# 4. Wait 7 days...
-
-# 5. Complete closure
-cargo run close-account
-```
+- **Funding**: deposit ETH into Gas Tank (on-chain) using `deposit`.
+- **Status**: the sample shows three values in `account-status`:
+  - on-chain balance: `IGasTank.balances(operator)`
+  - outstanding_charge: fetched from DA Builder vendor RPC `eth_accountInfo`
+  - available balance: `balance − outstanding_charge`
+- **Stopping usage**: stop submitting transactions; there is no on-chain close/withdrawal flow.
 
 ### Gas Tank Deposits
 The `deposit` command provides a convenient way to add funds to your Gas Tank:
@@ -299,14 +265,6 @@ cargo run account-status
 
 # Deposit funds if needed
 cargo run deposit
-
-# Initiate closure when ready
-cargo run initiate-close
-
-# Wait 7 days...
-
-# Complete closure
-cargo run close-account
 ```
 
 #### **Scenario 3: Recovery from Previous Closure**
@@ -339,10 +297,9 @@ cargo run close-account
 - Make sure you're calling from the correct address
 - TrustlessProposer only accepts calls that have been signed by the EOA owner and originate from itself or the designated multicall contract
 
-**"Account closure" issues**
+**Account status issues**
 - Check account status: `cargo run account-status`
-- If account is in withdrawal period, wait 7 days before completing closure
-- If you want to use the account for new DA Builder operations, complete the closure first: `cargo run close-account`
+- Ensure outstanding charges are covered to avoid interruptions
 
 ## 🤝 Support
 

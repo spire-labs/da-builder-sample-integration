@@ -91,7 +91,7 @@ contract OPStackProposer is IProposer {
     ///
     /// @dev Due to op-stack chain operators unique usecase this implementation is unconventional and does not make a low level call
     ///      But is still fully compatible with the aggregator service
-    function call(address _target, bytes calldata _data, uint256) external returns (bool) {
+    function onCall(address _target, bytes calldata _data, uint256) external returns (bool) {
         if (msg.sender != PROPOSER_MULTICALL && address(this) != msg.sender) revert Unauthorized();
 
         (bytes32[] memory _versionedHashes) = abi.decode(_data, (bytes32[]));

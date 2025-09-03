@@ -32,7 +32,7 @@ contract TrustlessProposer is IProposer, EIP712 layout at 25_732_701_950_170_629
         PROPOSER_MULTICALL = _proposerMulticall;
     }
 
-    function call(address _target, bytes calldata _data, uint256 _value) external returns (bool) {
+    function onCall(address _target, bytes calldata _data, uint256 _value) external returns (bool) {
         // The estimated gas used is not perfect but provides a meaningful bound to know if we went over the gas limit
         uint256 _startGas = gasleft();
 

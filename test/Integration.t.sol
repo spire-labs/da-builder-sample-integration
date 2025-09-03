@@ -63,7 +63,7 @@ contract IntegrationTest is Test {
         bytes memory signedData = createTrustlessProposerData(user, target, data, 0, 200_000);
 
         vm.prank(PROPOSER_MULTICALL);
-        bool success = IProposer(user).call(target, signedData, 0);
+        bool success = IProposer(user).onCall(target, signedData, 0);
         assertTrue(success, "TrustlessProposer call should succeed");
 
         // Verify the call was processed
@@ -88,7 +88,7 @@ contract IntegrationTest is Test {
         
         // Expect the call to revert with GasLimitExceeded error
         vm.expectRevert(abi.encodeWithSelector(TrustlessProposer.GasLimitExceeded.selector));
-        IProposer(user).call(target, signedData, 0);
+        IProposer(user).onCall(target, signedData, 0);
         
         console.log("TrustlessProposer gas limit enforcement test passed!");
     }
@@ -101,7 +101,7 @@ contract IntegrationTest is Test {
         bytes memory invalidData = abi.encode(bytes(""), block.timestamp, 0, data);
         vm.prank(PROPOSER_MULTICALL);
         vm.expectRevert(abi.encodeWithSelector(TrustlessProposer.SignatureInvalid.selector));
-        IProposer(user).call(target, invalidData, 0);
+        IProposer(user).onCall(target, invalidData, 0);
     }
 
     function testTrustlessProposerRejectsExpiredDeadline() public {
@@ -113,7 +113,7 @@ contract IntegrationTest is Test {
         bytes memory expiredData = abi.encode(bytes(""), expiredDeadline, 0, data);
         vm.prank(PROPOSER_MULTICALL);
         vm.expectRevert(abi.encodeWithSelector(TrustlessProposer.DeadlinePassed.selector));
-        IProposer(user).call(target, expiredData, 0);
+        IProposer(user).onCall(target, expiredData, 0);
     }
 
     function testTrustlessProposerRejectsWrongNonce() public {
@@ -124,7 +124,7 @@ contract IntegrationTest is Test {
         bytes memory wrongNonceData = abi.encode(bytes(""), block.timestamp, 999, data);
         vm.prank(PROPOSER_MULTICALL);
         vm.expectRevert(abi.encodeWithSelector(TrustlessProposer.NonceTooLow.selector));
-        IProposer(user).call(target, wrongNonceData, 0);
+        IProposer(user).onCall(target, wrongNonceData, 0);
     }
 
     /**
@@ -141,7 +141,7 @@ contract IntegrationTest is Test {
 
         vm.prank(PROPOSER_MULTICALL);
         (bool success,) =
-            address(unsafeProposer).call(abi.encodeWithSignature("call(address,bytes,uint256)", target, data, 0));
+            address(unsafeProposer).call(abi.encodeWithSignature("onCall(address,bytes,uint256)", target, data, 0));
         assertTrue(success, "UnsafeProposer call should succeed");
 
         // Verify the call was processed
@@ -170,7 +170,7 @@ contract IntegrationTest is Test {
 
         vm.prank(PROPOSER_MULTICALL);
         (bool success,) =
-            address(opStackProposer).call(abi.encodeWithSignature("call(address,bytes,uint256)", target, data, 0));
+            address(opStackProposer).call(abi.encodeWithSignature("onCall(address,bytes,uint256)", target, data, 0));
         assertTrue(success, "OPStackProposer call should succeed");
 
         console.log("OPStackProposer call successful!");
@@ -235,7 +235,7 @@ contract IntegrationTest is Test {
         address unauthorized = address(0xdeadbeef);
         vm.prank(unauthorized);
         vm.expectRevert(abi.encodeWithSelector(IProposer.Unauthorized.selector));
-        proposerImpl.call(target, data, 0);
+        proposerImpl.onCall(target, data, 0);
 
         console.log("Access control test completed");
 

@@ -226,7 +226,9 @@ impl DABuilderClient {
         ).await?;
         let trustless_proposer = TrustlessProposer::new(self.address, da_provider);
         // Since we are using TrustlessProposer, the value can be set to 0 since the encoded call is what carries the value that would be sent to the true target
-        let trustless_proposer_tx_request = trustless_proposer.call(target, encoded_call, U256::ZERO).into_transaction_request();
+        let trustless_proposer_tx_request = trustless_proposer.onCall(target, encoded_call, U256::ZERO).into_transaction_request();
+
+        // Note: funding checks are enforced server-side by DA Builder; no client-side gating here
         
         // Pull transaction parameters from the original transaction request
         let nonce = self.provider.get_transaction_count(self.address).await?;
@@ -245,7 +247,7 @@ impl DABuilderClient {
         }
 
         // Send the transaction and return the pending transaction
-        let pending_tx = da_provider.send_transaction(tx).await?;
+        let pending_tx = self.provider.send_transaction(tx).await?;
         Ok(pending_tx)
     }
 
@@ -287,69 +289,47 @@ impl DABuilderClient {
     }
 
     pub async fn deposit_to_gas_tank(&self, value: U256) -> Result<PendingTransactionBuilder<Ethereum>> {
-        // Get current nonce to avoid "nonce too low" errors
-        let nonce = self.provider.get_transaction_count(self.address).await?;
-        
-        // Create the deposit transaction manually
-        let tx = TransactionRequest::default()
-            .with_to(self.gas_tank_address)
-            .with_value(value)
-            .with_gas_limit(100_000)
-            .with_max_fee_per_gas(20_000_000_000u128) // 20 gwei
-            .with_max_priority_fee_per_gas(2_000_000_000u128) // 2 gwei
-            .with_chain_id(self.chain_id)
-            .with_nonce(nonce);
-        
-        // Send the transaction and return the pending transaction
-        let pending_tx = self.provider.send_transaction(tx).await?;
+        // Route deposit via DA Builder using the explicit deposit(address) ABI
+        let da_provider = self.da_builder_provider.as_ref().unwrap_or(&self.provider);
+        let contract = IGasTank::new(self.gas_tank_address, da_provider);
+        let tx = contract.deposit_1(self.address).value(value).into_transaction_request();
+        let pending_tx = da_provider.send_transaction(tx).await?;
         Ok(pending_tx)
     }
 
-    pub async fn initiate_account_close(&self) -> Result<PendingTransactionBuilder<Ethereum>> {
-        // Get current nonce
-        let nonce = self.provider.get_transaction_count(self.address).await?;
-        
-        // Use the generated contract bindings for type-safe function encoding
-        let call_data = IGasTank::initiateAccountCloseCall {}.abi_encode();
-        
-        // Create the initiate close transaction
-        let tx = TransactionRequest::default()
-            .with_to(self.gas_tank_address)
-            .with_input(Bytes::from(call_data))
-            .with_gas_limit(100_000)
-            .with_max_fee_per_gas(20_000_000_000u128) // 20 gwei
-            .with_max_priority_fee_per_gas(2_000_000_000u128) // 2 gwei
-            .with_chain_id(self.chain_id)
-            .with_nonce(nonce);
-        
-        // Send the transaction and return the pending transaction
-        let pending_tx = self.provider.send_transaction(tx).await?;
-        Ok(pending_tx)
+    /// Fetch account info (balance and outstanding_charge) via DA Builder vendor RPC.
+    /// Requires `with_da_builder_rpc` to have been called.
+    pub async fn fetch_account_info_via_rpc(&self, operator: Address) -> Result<(U256, U256)> {
+        let da_provider = self
+            .da_builder_provider
+            .as_ref()
+            .ok_or_else(|| eyre::eyre!("DA Builder RPC not configured. Call with_da_builder_rpc() first."))?;
+
+        // Build params as a simple map and request
+        let mut param = std::collections::HashMap::new();
+        param.insert("address".to_string(), format!("0x{:x}", operator));
+        let params = vec![param];
+
+        // The DA Builder RPC returns a flat object with decimal strings
+        let account: std::collections::HashMap<String, String> = da_provider
+            .raw_request("eth_accountInfo".into(), params)
+            .await?;
+
+        let balance = account
+            .get("balance")
+            .and_then(|s| s.parse::<u128>().ok())
+            .map(U256::from)
+            .unwrap_or(U256::ZERO);
+        let outstanding_charge = account
+            .get("outstanding_charge")
+            .and_then(|s| s.parse::<u128>().ok())
+            .map(U256::from)
+            .unwrap_or(U256::ZERO);
+
+        Ok((balance, outstanding_charge))
     }
 
-    pub async fn close_account(&self) -> Result<PendingTransactionBuilder<Ethereum>> {
-        // Get current nonce
-        let nonce = self.provider.get_transaction_count(self.address).await?;
-        
-        // Use the generated contract bindings for type-safe function encoding
-        let call_data = IGasTank::closeAccountCall {
-            _operator: self.address,
-        }.abi_encode();
-        
-        // Create the close account transaction
-        let tx = TransactionRequest::default()
-            .with_to(self.gas_tank_address)
-            .with_input(Bytes::from(call_data))
-            .with_gas_limit(100_000)
-            .with_max_fee_per_gas(20_000_000_000u128) // 20 gwei
-            .with_max_priority_fee_per_gas(2_000_000_000u128) // 2 gwei
-            .with_chain_id(self.chain_id)
-            .with_nonce(nonce);
-        
-        // Send the transaction and return the pending transaction
-        let pending_tx = self.provider.send_transaction(tx).await?;
-        Ok(pending_tx)
-    }
+    //
 
     // Contract deployment methods
     pub async fn setup_eip7702_account_code(&self, proposer_address: Address) -> Result<PendingTransactionBuilder<Ethereum>> {
@@ -608,30 +588,7 @@ impl DABuilderClient {
         Ok(bytecode_bytes)
     }
 
-    /// Check if an account has initiated withdrawal from Gas Tank
-    pub async fn check_withdrawal_initiated(&self) -> Result<bool> {
-        let contract = IGasTank::new(self.gas_tank_address, &self.provider);
-        let withdrawal_started_at = contract.withdrawalStartedAt(self.address).call().await?;
-        Ok(!withdrawal_started_at.is_zero())
-    }
-
-    /// Check if withdrawal period has passed (7 days)
-    pub async fn can_close_account(&self) -> Result<bool> {
-        let contract = IGasTank::new(self.gas_tank_address, &self.provider);
-        let withdrawal_started_at = contract.withdrawalStartedAt(self.address).call().await?;
-        
-        if withdrawal_started_at.is_zero() {
-            return Ok(false); // No withdrawal initiated
-        }
-        
-        let current_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)?
-            .as_secs();
-        let withdrawal_time = withdrawal_started_at.to::<u64>();
-        let seven_days = 7 * 24 * 60 * 60; // 7 days in seconds
-        
-        Ok(current_time >= withdrawal_time + seven_days)
-    }
+    // Note: account info vendor RPC is called directly where needed; no helpers retained per request
 
     /// Check if EOA already has the correct Proposer code set
     /// Returns (has_code, is_correct_proposer) tuple
