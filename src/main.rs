@@ -9,6 +9,7 @@ use client::DABuilderClient;
 use std::process;
 use std::env;
 use alloy::primitives::Bytes;
+use alloy::primitives::utils::parse_units;
 // Use the auto-generated contract bindings from build.rs
 mod generated_contracts;
 use generated_contracts::*;
@@ -63,12 +64,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             monitor_onchain_execution(&client).await?;
 
             // Print completion summary
-            print_completion_summary(&client);
+            print_completion_summary(&client, chain_id);
             
             Ok(())
         }
         "account-status" => show_account_status(&client).await,
         "deposit" => deposit_to_gas_tank(&client).await,
+        "send" => send_custom_tx(client, &args, &da_builder_rpc_url).await,
         _ => {
             eprintln!("❌ Unknown command: {command}");
             print_help();
@@ -474,9 +476,8 @@ async fn monitor_onchain_execution(client: &DABuilderClient) -> Result<(), Box<d
 }
 
 /// Step 9: Demonstrate account closing (optional)
-
 /// Print completion summary
-fn print_completion_summary(client: &DABuilderClient) {
+fn print_completion_summary(client: &DABuilderClient, chain_id: u64) {
     println!("\n🎉 Integration completed successfully!");
     println!("=====================================");
     println!("All steps have been completed:");
@@ -499,8 +500,14 @@ fn print_completion_summary(client: &DABuilderClient) {
     println!("  • Gas Tank withdrawal recovery and account management");
     println!("  • CREATE2 deterministic deployment with transaction parameter control");
     println!();
-    println!("Check the transactions on Etherscan to verify the calls:");
-    println!("  https://hoodi.etherscan.io/address/{}", client.address());
+    let explorer = match chain_id {
+        1 => "https://etherscan.io",
+        17000 => "https://holesky.etherscan.io",
+        560048 => "https://hoodi.etherscan.io",
+        _ => "https://etherscan.io",
+    };
+    println!("Check the transactions on the explorer:");
+    println!("  {}/address/{}", explorer, client.address());
 } 
 
 /// Print help information
@@ -514,6 +521,7 @@ fn print_help() {
     println!("  demo              Run the full DA Builder integration demo (default)");
     println!("  account-status    Show current account status and Gas Tank balance");
     println!("  deposit           Deposit funds to Gas Tank");
+    println!("  send              Send a custom transaction via DA Builder");
     println!("  help              Show this help message");
     println!();
     println!("Environment Variables:");
@@ -527,6 +535,7 @@ fn print_help() {
     println!("  cargo run                    # Run full demo");
     println!("  cargo run account-status     # Check account status");
     println!("  cargo run deposit            # Deposit to Gas Tank");
+    println!("  cargo run send -- --to 0x... --data 0x... --value 0.01eth");
 }
 
 /// Show current account status
@@ -552,6 +561,124 @@ async fn show_account_status(client: &DABuilderClient) -> Result<(), Box<dyn std
     Ok(())
 }
 
+/// Send a user-provided transaction through DA Builder
+async fn send_custom_tx(
+    client: DABuilderClient,
+    args: &[String],
+    da_builder_rpc_url: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Ensure DA Builder RPC is configured
+    let client = client.with_da_builder_rpc(da_builder_rpc_url)?;
+
+    // Parse flags after the command name
+    let mut to: Option<Address> = None;
+    let mut data: Bytes = Bytes::new();
+    let mut value: U256 = U256::ZERO;
+    let mut gas: Option<u64> = None;
+    let mut max_fee_per_gas: Option<u128> = None;
+    let mut max_priority_fee_per_gas: Option<u128> = None;
+    let mut deadline_secs: Option<u64> = None;
+
+    let mut i = 2; // args[0]=bin, args[1]=send
+    while i < args.len() {
+        match args[i].as_str() {
+            "--to" => {
+                i += 1; if i >= args.len() { break; }
+                to = Some(args[i].parse::<Address>()?);
+            }
+            "--data" | "--calldata" => {
+                i += 1; if i >= args.len() { break; }
+                let s = args[i].trim_start_matches("0x");
+                let bytes = hex::decode(s)?;
+                data = Bytes::from(bytes);
+            }
+            "--value" => {
+                i += 1; if i >= args.len() { break; }
+                value = parse_value_to_wei(&args[i])?;
+            }
+            "--gas" => {
+                i += 1; if i >= args.len() { break; }
+                gas = Some(args[i].parse::<u64>()?);
+            }
+            "--max-fee-per-gas" => {
+                i += 1; if i >= args.len() { break; }
+                max_fee_per_gas = Some(parse_gwei_to_wei(&args[i])?);
+            }
+            "--max-priority-fee-per-gas" => {
+                i += 1; if i >= args.len() { break; }
+                max_priority_fee_per_gas = Some(parse_gwei_to_wei(&args[i])?);
+            }
+            "--deadline" => {
+                i += 1; if i >= args.len() { break; }
+                deadline_secs = Some(args[i].parse::<u64>()?);
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+
+    let to = to.ok_or_else(|| eyre::eyre!("--to <address> is required"))?;
+    let deadline = deadline_secs.unwrap_or_else(|| {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() + 3600
+    });
+
+    let tx = TransactionRequest {
+        to: Some(TxKind::Call(to)),
+        input: TransactionInput::new(data),
+        value: Some(value),
+        gas,
+        max_fee_per_gas,
+        max_priority_fee_per_gas,
+        ..Default::default()
+    };
+
+    let pending = client.send_da_builder_transaction(tx, deadline).await?;
+    println!("✅ Transaction submitted to DA Builder");
+    println!("   DA Builder internal hash: {}", pending.tx_hash());
+    let receipt = pending.get_receipt().await?;
+    println!("✅ Mined: {}", receipt.transaction_hash);
+    Ok(())
+}
+
+fn parse_value_to_wei(s: &str) -> Result<U256, Box<dyn std::error::Error>> {
+    let lower = s.trim().to_lowercase();
+    if lower.starts_with("0x") {
+        let bytes = hex::decode(lower.trim_start_matches("0x"))?;
+        return Ok(U256::from_be_slice(&bytes));
+    }
+    let (num_str, unit) = if lower.ends_with("ether") {
+        (lower.trim_end_matches("ether").trim(), "ether")
+    } else if lower.ends_with("eth") {
+        (lower.trim_end_matches("eth").trim(), "ether")
+    } else if lower.ends_with("gwei") {
+        (lower.trim_end_matches("gwei").trim(), "gwei")
+    } else if lower.ends_with("wei") {
+        (lower.trim_end_matches("wei").trim(), "wei")
+    } else {
+        // default: treat as wei decimal
+        return Ok(U256::from(lower.parse::<u128>()?));
+    };
+    let v: U256 = parse_units(num_str, unit)?.into();
+    Ok(v)
+}
+
+fn parse_gwei_to_wei(s: &str) -> Result<u128, Box<dyn std::error::Error>> {
+    let lower = s.trim().to_lowercase();
+    let (num_str, unit) = if lower.ends_with("gwei") {
+        (lower.trim_end_matches("gwei").trim(), "gwei")
+    } else if lower.ends_with("wei") {
+        (lower.trim_end_matches("wei").trim(), "wei")
+    } else {
+        // default: assume wei
+        (lower.as_str(), "wei")
+    };
+    let v: U256 = parse_units(num_str, unit)?.into();
+    if v > U256::from(u128::MAX) { return Err("value too large for u128".into()); }
+    Ok(v.to::<u128>())
+}
 
 /// Helper function to handle transaction receipts and check for failures
 async fn handle_transaction_receipt(
