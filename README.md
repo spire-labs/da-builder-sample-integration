@@ -107,7 +107,7 @@ export PRIVATE_KEY="your_private_key_here"
 # Testnet defaults (Hoodi - can be overridden)
 export TARGET_CHAIN="hoodi"                                     # Default: "hoodi"
 export RPC_URL="https://ethereum-hoodi-rpc.publicnode.com"      # Auto-configured per chain
-export DA_BUILDER_API_URL="https://da-builder.hoodi.spire.dev/" # Auto-configured per chain
+export DA_BUILDER_RPC_URL="https://da-builder.hoodi.spire.dev/" # Auto-configured per chain
 
 # Optional: Override for other chains
 export TARGET_CHAIN="holesky"                                   # Holesky Prod
@@ -156,12 +156,32 @@ cargo run deposit
 cargo run help
 ```
 
+#### **Send a Custom Transaction via DA Builder**
+```bash
+# Basic usage (pass args after --)
+cargo run send -- --to 0xYourContract --data 0xYourCalldata
+
+# With value and gas settings
+cargo run send -- --to 0xYourContract --data 0xYourCalldata --value 0.01eth --gas 200000 \
+  --max-fee-per-gas 20gwei --max-priority-fee-per-gas 2gwei --deadline 3600
+```
+
+Flags:
+- `--to <address>`: target address (required)
+- `--data|--calldata <0x...>`: calldata (optional)
+- `--value <amount>`: value in `wei|gwei|eth|ether` or hex `0x...` (optional)
+- `--gas <u64>`: gas limit (optional)
+- `--max-fee-per-gas <amount>`: in `wei|gwei` (optional)
+- `--max-priority-fee-per-gas <amount>`: in `wei|gwei` (optional)
+- `--deadline <seconds>`: seconds-from-epoch deadline for EIP-712 signature (optional; default now+3600)
+
 #### **Command Reference**
 | Command          | Description                                        |
 | ---------------- | -------------------------------------------------- |
 | `demo`           | Run the full DA Builder integration demo (default) |
 | `account-status` | Show current account status and Gas Tank balance   |
 | `deposit`        | Deposit funds to Gas Tank                          |
+| `send`           | Send a custom transaction via DA Builder           |
 | `help`           | Show help message and all commands                 |
 
 **🚀 Automatic Build Process:** The build system will automatically:
@@ -231,31 +251,27 @@ The complete integration performs these steps:
 5. **Monitor execution** - Track the transaction on-chain
 6. **Account status** - Display on-chain balance and off-chain outstanding charges
 
-## 📊 Account Management (new model)
+## 📊 Account Management
 
 - **Funding**: deposit ETH into Gas Tank (on-chain) using `deposit`.
 - **Status**: the sample shows three values in `account-status`:
   - on-chain balance: `IGasTank.balances(operator)`
   - outstanding_charge: fetched from DA Builder vendor RPC `eth_accountInfo`
   - available balance: `balance − outstanding_charge`
-- **Stopping usage**: stop submitting transactions; there is no on-chain close/withdrawal flow.
 
 ### Gas Tank Deposits
 The `deposit` command provides a convenient way to add funds to your Gas Tank:
 
 - **Balance validation** - Checks wallet balance before attempting deposit
-- **Withdrawal mode protection** - Prevents deposits when account is in withdrawal mode
 - **Flexible amounts** - Accept custom amounts or use suggested defaults
 - **Clear feedback** - Shows before/after balances and transaction status
 
 ### Usage Examples
 
-#### **Scenario 1: Full Demo (No Account Closing)**
+#### **Scenario 1: Full Demo**
 ```bash
 cargo run
 # Runs complete integration demo
-# Prompts for account closing (user can skip)
-# Account remains usable for future runs
 ```
 
 #### **Scenario 2: Account Management Only**
@@ -267,14 +283,9 @@ cargo run account-status
 cargo run deposit
 ```
 
-#### **Scenario 3: Recovery from Previous Closure**
+#### **Scenario 3: Send a Custom Transaction**
 ```bash
-# If account is already in withdrawal
-cargo run account-status
-# Shows withdrawal status and time remaining
-
-# When ready to complete
-cargo run close-account
+cargo run send -- --to 0xYourContract --data 0xYourCalldata
 ```
 
 ## 🔧 Troubleshooting

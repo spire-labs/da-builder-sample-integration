@@ -475,7 +475,6 @@ async fn monitor_onchain_execution(client: &DABuilderClient) -> Result<(), Box<d
     Ok(())
 }
 
-/// Step 9: Demonstrate account closing (optional)
 /// Print completion summary
 fn print_completion_summary(client: &DABuilderClient, chain_id: u64) {
     println!("\n🎉 Integration completed successfully!");
@@ -497,7 +496,7 @@ fn print_completion_summary(client: &DABuilderClient, chain_id: u64) {
     println!("  • Optional blob data support for EIP-4844 cost savings");
     println!("  • Conditional blob transaction creation (only when blob data provided)");
     println!("  • Simplified API - no need to manually handle EIP-712 encoding");
-    println!("  • Gas Tank withdrawal recovery and account management");
+    println!("  • Account status and Gas Tank balance management");
     println!("  • CREATE2 deterministic deployment with transaction parameter control");
     println!();
     let explorer = match chain_id {
