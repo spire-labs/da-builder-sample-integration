@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import "../interfaces/IProposer.sol";
 
@@ -46,10 +47,10 @@ contract TrustlessProposer is IProposer, EIP712 layout at 25_732_701_950_170_629
         if (_nonce != nestedNonce) revert NonceTooLow();
 
         // Create the EIP-712 message hash
-        bytes32 _messageHash = getMessageHash(_deadline, _nonce, _target, _value, _calldata, _gasLimit);
+        bytes32 _messageHash = _hashTypedCallData(_deadline, _nonce, _target, _value, _calldata, _gasLimit);
 
         // Recover the signer from the signature
-        address _signer = getSignerFromSignature(_messageHash, _sig);
+        address _signer = _getSignerFromSignature(_messageHash, _sig);
         if (_signer != address(this)) revert SignatureInvalid();
 
         nestedNonce++;
@@ -68,24 +69,28 @@ contract TrustlessProposer is IProposer, EIP712 layout at 25_732_701_950_170_629
         return true;
     }
 
-    /// @notice Hashes the typed data for the call
-    ///
-    /// @param _deadline The deadline for the call
-    /// @param _nonce The nonce for the call
-    /// @param _target The target for the call
-    /// @param _value The value for the call
-    /// @param _calldata The calldata for the call
-    /// @param _gasLimit The gas limit for the call
-    function getMessageHash(
+    /// @notice Hashes the typed data for the call (EIP-712)
+    function _hashTypedCallData(
         uint256 _deadline,
         uint256 _nonce,
         address _target,
         uint256 _value,
         bytes memory _calldata,
         uint256 _gasLimit
-    ) public view returns (bytes32) {
-        return
-            _hashTypedDataV4(keccak256(abi.encode(CALL_TYPEHASH, _deadline, _nonce, _target, _value, _calldata, _gasLimit)));
+    ) internal view returns (bytes32) {
+        return _hashTypedDataV4(
+            keccak256(
+                abi.encode(
+                    CALL_TYPEHASH,
+                    _deadline,
+                    _nonce,
+                    _target,
+                    _value,
+                    keccak256(_calldata),
+                    _gasLimit
+                )
+            )
+        );
     }
 
     /// @notice Gets the signer from the signature
@@ -94,18 +99,36 @@ contract TrustlessProposer is IProposer, EIP712 layout at 25_732_701_950_170_629
     /// @param _sig The signature to recover the signer from
     ///
     /// @return The signer address
-    function getSignerFromSignature(bytes32 _messageHash, bytes memory _sig) public pure returns (address) {
-        uint8 v;
-        bytes32 r;
-        bytes32 s;
+    function _getSignerFromSignature(bytes32 _messageHash, bytes memory _sig) internal pure returns (address) {
+        (address _signer, ECDSA.RecoverError _error,) = ECDSA.tryRecover(_messageHash, _sig);
+        if (_error != ECDSA.RecoverError.NoError) revert SignatureInvalid();
+        return _signer;
+    }
 
-        assembly {
-            r := mload(add(_sig, 0x20))
-            s := mload(add(_sig, 0x40))
-            v := byte(0, mload(add(_sig, 0x60)))
-        }
+    // ERC-721 / ERC-1155 receiver hooks
+    function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
+        return this.onERC721Received.selector;
+    }
 
-        return ecrecover(_messageHash, v, r, s);
+    function onERC1155Received(address, address, uint256, uint256, bytes calldata) external pure returns (bytes4) {
+        return this.onERC1155Received.selector;
+    }
+
+    function onERC1155BatchReceived(
+        address,
+        address,
+        uint256[] calldata,
+        uint256[] calldata,
+        bytes calldata
+    ) external pure returns (bytes4) {
+        return this.onERC1155BatchReceived.selector;
+    }
+
+    function supportsInterface(bytes4 _interfaceID) external pure returns (bool) {
+        bool _supported = _interfaceID == 0x01ffc9a7 // ERC-165
+            || _interfaceID == 0x150b7a02 // ERC721TokenReceiver
+            || _interfaceID == 0x4e2312e0; // ERC-1155 Receiver
+        return _supported;
     }
 
     receive() external payable {}

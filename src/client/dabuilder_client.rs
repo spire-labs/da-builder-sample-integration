@@ -46,7 +46,7 @@ type MessageStruct = sol! {
         uint256,  // nonce
         address,  // target
         uint256,  // value
-        bytes,    // calldata
+        bytes32,  // keccak256(calldata)
         uint256   // gas_limit
     ) 
 };
@@ -227,8 +227,6 @@ impl DABuilderClient {
         let trustless_proposer = TrustlessProposer::new(self.address, da_provider);
         // Since we are using TrustlessProposer, the value can be set to 0 since the encoded call is what carries the value that would be sent to the true target
         let trustless_proposer_tx_request = trustless_proposer.onCall(target, encoded_call, U256::ZERO).into_transaction_request();
-
-        // Note: funding checks are enforced server-side by DA Builder; no client-side gating here
         
         // Pull transaction parameters from the original transaction request
         let nonce = self.provider.get_transaction_count(self.address).await?;
@@ -247,7 +245,7 @@ impl DABuilderClient {
         }
 
         // Send the transaction and return the pending transaction
-        let pending_tx = self.provider.send_transaction(tx).await?;
+        let pending_tx = da_provider.send_transaction(tx).await?;
         Ok(pending_tx)
     }
 
@@ -307,7 +305,7 @@ impl DABuilderClient {
 
         // Build params as a simple map and request
         let mut param = std::collections::HashMap::new();
-        param.insert("address".to_string(), format!("0x{:x}", operator));
+        param.insert("address".to_string(), format!("0x{operator:x}"));
         let params = vec![param];
 
         // The DA Builder RPC returns a flat object with decimal strings
@@ -633,8 +631,8 @@ impl DABuilderClient {
             gas_limit,
         )?;
 
-        // @note Instead of using alloy to generate the message hash we can also use the contract's getMessageHash to avoid
-        // issues with different contract versions changing the eip712 domain separator of course at the cost of a network call
+        // @note Instead of using alloy to generate the message hash we could also make the contract's `_hashTypedCallData` public
+        // and call it to avoid issues with different contract versions changing the eip712 domain separator
         // let contract = TrustlessProposer::new(proposer_addr, &self.provider);
         // let message_hash = contract.getMessageHash(deadline, nonce, target, value, call_data.clone(), gas_limit).call().await?;
 
@@ -680,7 +678,8 @@ impl DABuilderClient {
         
         // Call type hash
         let call_type_hash = alloy::primitives::keccak256("Call(uint256 deadline,uint256 nonce,address target,uint256 value,bytes calldata,uint256 gasLimit)");
-        
+        // Per EIP-712, dynamic bytes are hashed before inclusion in the struct hash
+        let calldata_hash = alloy::primitives::keccak256(call_data.as_ref());
         // Encode the struct hash (includes the call type hash as first parameter)
         let call_struct_value = MessageStruct::abi_encode_sequence(&(
             call_type_hash,
@@ -688,7 +687,7 @@ impl DABuilderClient {
             nonce,
             target,
             value,
-            call_data,
+            calldata_hash,
             gas_limit,
         ));
         let message_hash = alloy::primitives::keccak256(call_struct_value);

@@ -76,20 +76,20 @@ contract IntegrationTest is Test {
 
     function testTrustlessProposerRejectsGasLimitExceeded() public {
         console.log("Testing TrustlessProposer gas limit enforcement");
-        
+
         address target = address(inbox);
         bytes memory data =
             abi.encodeWithSignature("sendMessage(address,bytes)", address(0x42), abi.encodeWithSignature("increment()"));
 
         // Create signed data with a very low gas limit that will be exceeded
         bytes memory signedData = createTrustlessProposerData(user, target, data, 0, 1_000); // Very low gas limit
-        
+
         vm.prank(PROPOSER_MULTICALL);
-        
+
         // Expect the call to revert with GasLimitExceeded error
         vm.expectRevert(abi.encodeWithSelector(TrustlessProposer.GasLimitExceeded.selector));
         IProposer(user).onCall(target, signedData, 0);
-        
+
         console.log("TrustlessProposer gas limit enforcement test passed!");
     }
 
@@ -246,11 +246,13 @@ contract IntegrationTest is Test {
      * @dev Create properly signed data for TrustlessProposer
      * This follows the pattern from the DA Builder documentation
      */
-    function createTrustlessProposerData(address eoa, address target, bytes memory callData, uint256 value, uint256 gasLimit)
-        internal
-        view
-        returns (bytes memory)
-    {
+    function createTrustlessProposerData(
+        address eoa,
+        address target,
+        bytes memory callData,
+        uint256 value,
+        uint256 gasLimit
+    ) internal view returns (bytes memory) {
         uint256 nonce = TrustlessProposer(payable(eoa)).nestedNonce();
         uint256 deadline = block.timestamp + 3600;
 
@@ -268,7 +270,9 @@ contract IntegrationTest is Test {
         // Create the struct hash
         bytes32 structHash = keccak256(
             abi.encode(
-                keccak256("Call(uint256 deadline,uint256 nonce,address target,uint256 value,bytes calldata,uint256 gasLimit)"),
+                keccak256(
+                    "Call(uint256 deadline,uint256 nonce,address target,uint256 value,bytes calldata,uint256 gasLimit)"
+                ),
                 deadline,
                 nonce,
                 target,
