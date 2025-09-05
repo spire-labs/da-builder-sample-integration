@@ -68,7 +68,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             
             Ok(())
         }
-        "account-status" => show_account_status(&client).await,
+        "account-status" => {
+            let client = client.with_da_builder_rpc(&da_builder_rpc_url)?;
+            show_account_status(&client).await
+        },
         "deposit" => deposit_to_gas_tank(&client).await,
         "send" => send_custom_tx(client, &args, &da_builder_rpc_url).await,
         _ => {

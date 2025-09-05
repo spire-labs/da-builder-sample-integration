@@ -303,10 +303,8 @@ impl DABuilderClient {
             .as_ref()
             .ok_or_else(|| eyre::eyre!("DA Builder RPC not configured. Call with_da_builder_rpc() first."))?;
 
-        // Build params as a simple map and request
-        let mut param = std::collections::HashMap::new();
-        param.insert("address".to_string(), format!("0x{operator:x}"));
-        let params = vec![param];
+        // The DA Builder RPC expects a single string parameter: the address
+        let params = vec![format!("0x{operator:x}")];
 
         // The DA Builder RPC returns a flat object with decimal strings
         let account: std::collections::HashMap<String, String> = da_provider
