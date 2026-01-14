@@ -16,7 +16,7 @@ This sample integration will help you complete the following objectives:
 4. **Deposit funds** into the GasTank contract
 5. **Submit a transaction** to DA Builder on testnet
 6. **Verify the transaction** onchain showing calls being made to the inbox contract
-7. **View account status** including on-chain balance and off-chain outstanding charges
+7. **View account status** including onchain balance and outstanding charges
 8. **Handle transaction failures** with automatic revert detection and clear error reporting
 
 ## 🏗️ Architecture
@@ -76,7 +76,7 @@ graph TB
 ### Features
 
 - **🚀 Full Integration Demo** - Complete DA Builder workflow
-- **📊 Account Management** - Check status and balances (on-chain + off-chain charges)
+- **📊 Account Management** - Check status and balances (onchain Gas Tank balance + outstanding charges)
 
 ### Setup
 
@@ -110,7 +110,6 @@ export RPC_URL="https://ethereum-hoodi-rpc.publicnode.com"      # Auto-configure
 export DA_BUILDER_RPC_URL="https://da-builder.hoodi.spire.dev/" # Auto-configured per chain
 
 # Optional: Override for other chains
-export TARGET_CHAIN="holesky"                                   # Holesky Prod
 export TARGET_CHAIN="mainnet"                                   # Ethereum Mainnet
 
 # For mainnet deployment
@@ -126,13 +125,11 @@ export PROPOSER_MULTICALL_ADDRESS="0x..."                       # Optional overr
 
 | Chain        | Chain ID | DA Builder URL                        | GasTank Address                            | ProposerMulticall Address                  |
 | ------------ | -------- | ------------------------------------- | ------------------------------------------ | ------------------------------------------ |
-| Holesky Prod | 17000    | https://da-builder.holesky.spire.dev/ | 0x18Fa15ea0A34a7c4BCA01bf7263b2a9Ac0D32e92 | 0x5132dCe9aD675b2ac5E37D69D2bC7399764b5469 |
 | Hoodi Prod   | 560048   | https://da-builder.hoodi.spire.dev/   | 0x18Fa15ea0A34a7c4BCA01bf7263b2a9Ac0D32e92 | 0x5132dCe9aD675b2ac5E37D69D2bC7399764b5469 |
 | Mainnet Prod | 1        | https://da-builder.mainnet.spire.dev/ | 0x2565c0A726cB0f2F79cd16510c117B4da6a6534b | 0x9ccc2f3ecdE026230e11a5c8799ac7524f2bb294 |
 
 4. **Get testnet ETH:**
    - **Hoodi**: https://hoodi-faucet.pk910.de/
-   - **Holesky**: https://holesky-faucet.pk910.de/
 
 ### 5. Deploy Contracts and Run Integration
 
@@ -194,7 +191,7 @@ The full demo will then:
 - Set up EIP-7702 account code
 - Deposit funds into the GasTank
 - Submit a transaction to DA Builder
-- Monitor on-chain execution
+- Monitor onchain execution
 
 ### 6. Verify on Etherscan
 
@@ -248,16 +245,19 @@ The complete integration performs these steps:
 2. **Set up EIP-7702 account code** - Use CREATE2 to deploy proposer to EOA address
 3. **Deposit into Gas Tank** - Deposit ETH into the DA Builder Gas Tank
 4. **Submit transaction to DA Builder** - Create and submit a transaction
-5. **Monitor execution** - Track the transaction on-chain
-6. **Account status** - Display on-chain balance and off-chain outstanding charges
+5. **Monitor execution** - Track the transaction onchain
+6. **Account status** - Display Gas Tank balance (onchain and RPC-reported) and outstanding charges
 
 ## 📊 Account Management
 
-- **Funding**: deposit ETH into Gas Tank (on-chain) using `deposit`.
-- **Status**: the sample shows three values in `account-status`:
-  - on-chain balance: `IGasTank.balances(operator)`
-  - outstanding_charge: fetched from DA Builder vendor RPC `eth_accountInfo`
-  - available balance: `balance − outstanding_charge`
+- **Funding**: deposit ETH into Gas Tank (onchain) using `deposit`.
+- **Status**: the sample shows account information in `account-status`:
+  - Gas Tank balance (onchain): `IGasTank.balances(operator)` - authoritative balance from the contract
+  - Gas Tank balance (RPC-reported): from DA Builder vendor RPC `dab_accountInfo` - may differ due to indexing delays
+  - outstanding_charge: fetched from DA Builder vendor RPC `dab_accountInfo`
+  - available balance: `onchain_balance − outstanding_charge`
+  - whitelisted: whether the account is whitelisted to submit transactions
+  - gas_unit_discount: gas unit discount applied to transactions
 
 ### Gas Tank Deposits
 The `deposit` command provides a convenient way to add funds to your Gas Tank:
@@ -311,6 +311,11 @@ cargo run send -- --to 0xYourContract --data 0xYourCalldata
 **Account status issues**
 - Check account status: `cargo run account-status`
 - Ensure outstanding charges are covered to avoid interruptions
+
+**Sporadic transaction inclusion on testnets**
+- Testnets generally have less active builder infrastructure compared to mainnet, which can result in sporadic transaction inclusion
+- This is a characteristic of testnet environments rather than an issue with the integration code
+- Mainnet typically has more reliable builder infrastructure and better inclusion rates
 
 ## 🤝 Support
 

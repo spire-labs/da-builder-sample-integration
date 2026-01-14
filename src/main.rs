@@ -95,7 +95,6 @@ fn load_configuration() -> Result<ConfigTuple, Box<dyn std::error::Error>> {
     
     let rpc_url = env::var("RPC_URL").unwrap_or_else(|_| {
         match target_chain.as_str() {
-            "holesky" => "https://ethereum-holesky-rpc.publicnode.com".to_string(),
             "hoodi" => "https://ethereum-hoodi-rpc.publicnode.com".to_string(),
             "mainnet" => {
                 eprintln!("❌ RPC_URL environment variable is required for mainnet deployment");
@@ -109,12 +108,11 @@ fn load_configuration() -> Result<ConfigTuple, Box<dyn std::error::Error>> {
     
     // Get chain ID and DA Builder RPC URL based on target chain
     let (chain_id, da_builder_rpc_url_default) = match target_chain.as_str() {
-        "holesky" => (17000u64, "https://da-builder.holesky.spire.dev/".to_string()),
         "hoodi" => (560048u64, "https://da-builder.hoodi.spire.dev/".to_string()),
         "mainnet" => (1u64, "https://da-builder.mainnet.spire.dev/".to_string()),
         _ => {
             eprintln!("❌ Unsupported target chain: {target_chain}");
-            eprintln!("Supported chains: holesky, hoodi, mainnet");
+            eprintln!("Supported chains: hoodi, mainnet");
             process::exit(1);
         }
     };
@@ -122,11 +120,6 @@ fn load_configuration() -> Result<ConfigTuple, Box<dyn std::error::Error>> {
     
     // Get Gas Tank address based on target chain (can be overridden)
     let gas_tank_address = match target_chain.as_str() {
-        "holesky" => {
-            env::var("GAS_TANK_ADDRESS")
-                .unwrap_or_else(|_| "0x18Fa15ea0A34a7c4BCA01bf7263b2a9Ac0D32e92".to_string())
-                .parse::<Address>()?
-        }
         "hoodi" => {
             env::var("GAS_TANK_ADDRESS")
                 .unwrap_or_else(|_| "0x18Fa15ea0A34a7c4BCA01bf7263b2a9Ac0D32e92".to_string())
@@ -142,11 +135,6 @@ fn load_configuration() -> Result<ConfigTuple, Box<dyn std::error::Error>> {
 
     // Get ProposerMulticall address based on target chain (can be overridden)
     let proposer_multicall_address = match target_chain.as_str() {
-        "holesky" => {
-            env::var("PROPOSER_MULTICALL_ADDRESS")
-                .unwrap_or_else(|_| "0x5132dCe9aD675b2ac5E37D69D2bC7399764b5469".to_string())
-                .parse::<Address>()?
-        }
         "hoodi" => {
             env::var("PROPOSER_MULTICALL_ADDRESS")
                 .unwrap_or_else(|_| "0x5132dCe9aD675b2ac5E37D69D2bC7399764b5469".to_string())
@@ -235,12 +223,6 @@ async fn check_wallet_balance(client: &DABuilderClient, chain_id: u64) -> Result
         
         // Show appropriate faucet based on chain
         match chain_id {
-            17000 => {
-                eprintln!("   Get Holesky testnet ETH from:");
-                eprintln!("   • https://holesky-faucet.pk910.de/ (PoW faucet)");
-                eprintln!("   • https://faucet.quicknode.com/ethereum/holesky");
-                eprintln!("   • https://bwarelabs.com/faucets/ethereum-holesky");
-            }
             560048 => {
                 eprintln!("   Get Hoodi testnet ETH from:");
                 eprintln!("   • https://hoodi-faucet.pk910.de/");
@@ -401,21 +383,24 @@ async fn submit_da_builder_transactions(client: &DABuilderClient, inbox_address:
     
     let value = U256::ZERO;
     
-    // Set deadline (1 hour from now)
+    // Set deadline (60 seconds from now)
     let deadline_secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
-        .as_secs() + 3600;
+        .as_secs() + 60;
     
     // Example 1: Regular transaction (no blob data)
     println!("Example 1: Regular transaction without blob data");
     println!("  Calling MockInbox.sendMessage() with regular calldata");
+    // Note: Gas prices are not specified here - Alloy will use recommended values from the network.
+    // Testnets generally have less active builder infrastructure compared to mainnet, which can
+    // result in sporadic transaction inclusion. This is a characteristic of testnet environments
+    // rather than an issue with the integration code. Mainnet typically has more reliable builder
+    // infrastructure and better inclusion rates.
     let regular_tx_request = TransactionRequest {
         to: Some(TxKind::Call(target)),
         input: TransactionInput::new(Bytes::from(data.clone())),
         value: Some(value),
         gas: Some(200_000),
-        max_fee_per_gas: Some(20_000_000_000u128), // 20 gwei
-        max_priority_fee_per_gas: Some(2_000_000_000u128), // 2 gwei
         ..Default::default()
     };
     let regular_pending_tx = client.send_da_builder_transaction(
@@ -426,27 +411,39 @@ async fn submit_da_builder_transactions(client: &DABuilderClient, inbox_address:
     println!("   DA Builder internal hash: {}", regular_pending_tx.tx_hash());
     
     // Wait for regular transaction to be processed before submitting blob transaction
+    // Pass deadline so we stop waiting if the transaction expires
     println!("\n⏳ Waiting for regular transaction to be processed...");
-    handle_transaction_receipt(regular_pending_tx, "Regular DA Builder transaction").await?;
+    println!("   Deadline: {} ({} seconds from now)", 
+        deadline_secs, 
+        deadline_secs.saturating_sub(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+        )
+    );
+    handle_transaction_receipt_with_deadline(regular_pending_tx, "Regular DA Builder transaction", Some(deadline_secs)).await?;
     
     // Example 2: Blob transaction with blob data
     println!("\nExample 2: Blob transaction with blob data");
     println!("  Calling MockInbox.sendMessage() with blob data for cost savings");
-    let blob_data = Bytes::from("This is a large message that will be stored in a blob for cost savings. It could be any large data that doesn't need to be on-chain but needs to be referenced. Blobs are much cheaper than storing data in calldata.");
+    let blob_data = Bytes::from("This is a large message that will be stored in a blob for cost savings. It could be any large data that doesn't need to be onchain but needs to be referenced. Blobs are much cheaper than storing data in calldata.");
     
-    // Create blob sidecar with the blob data
+    // Create blob sidecar - SidecarBuilder handles padding automatically
     let mut builder = alloy::consensus::SidecarBuilder::<alloy::consensus::SimpleCoder>::new();
     builder.ingest(&blob_data);
     let sidecar = builder.build()?;
     
+    // Note: Gas prices are not specified here - Alloy will use recommended values from the network.
+    // Testnets generally have less active builder infrastructure compared to mainnet, which can
+    // result in sporadic transaction inclusion. This is a characteristic of testnet environments
+    // rather than an issue with the integration code. Mainnet typically has more reliable builder
+    // infrastructure and better inclusion rates.
     let blob_tx_request = TransactionRequest {
         to: Some(TxKind::Call(target)),
         input: TransactionInput::new(Bytes::from(data.clone())),
         value: Some(value),
         gas: Some(200_000),
-        max_fee_per_gas: Some(20_000_000_000u128), // 20 gwei
-        max_priority_fee_per_gas: Some(2_000_000_000u128), // 2 gwei
-        max_fee_per_blob_gas: Some(15_000_000_000u128), // 15 gwei
         ..Default::default()
     }.with_blob_sidecar(sidecar);
     let blob_pending_tx = client.send_da_builder_transaction(
@@ -457,20 +454,30 @@ async fn submit_da_builder_transactions(client: &DABuilderClient, inbox_address:
     println!("   DA Builder internal hash: {}", blob_pending_tx.tx_hash());
     
     // Wait for blob transaction to be processed
+    // Pass deadline so we stop waiting if the transaction expires
     println!("\n⏳ Waiting for blob transaction to be processed...");
-    handle_transaction_receipt(blob_pending_tx, "Blob DA Builder transaction").await?;
+    println!("   Deadline: {} ({} seconds from now)", 
+        deadline_secs, 
+        deadline_secs.saturating_sub(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+        )
+    );
+    handle_transaction_receipt_with_deadline(blob_pending_tx, "Blob DA Builder transaction", Some(deadline_secs)).await?;
     
-    println!("\n✅ All DA Builder transactions processed and confirmed on-chain");
+    println!("\n✅ All DA Builder transactions processed and confirmed onchain");
     
     Ok(())
 }
 
-/// Step 8: Monitor on-chain execution
+/// Step 8: Monitor onchain execution
 async fn monitor_onchain_execution(client: &DABuilderClient) -> Result<(), Box<dyn std::error::Error>> {
-    println!("\nStep 8: Monitoring on-chain execution");
+    println!("\nStep 8: Monitoring onchain execution");
     println!("-------------------------------------");
     println!("✅ All transactions have been submitted and confirmed");
-    println!("The DA Builder service has executed the transactions on-chain");
+    println!("The DA Builder service has executed the transactions onchain");
     println!("You can monitor the execution on Etherscan:");
     println!("  Hoodi Etherscan: https://hoodi.etherscan.io/");
     println!("  Search for your address: {}", client.address());
@@ -490,7 +497,7 @@ fn print_completion_summary(client: &DABuilderClient, chain_id: u64) {
     println!("✅ Mock Inbox deployed for testing");
     println!("✅ Regular transaction submitted to DA Builder");
     println!("✅ Blob transaction submitted to DA Builder");
-    println!("✅ All transactions confirmed on-chain");
+    println!("✅ All transactions confirmed onchain");
     println!();
     println!("Library Features Demonstrated:");
     println!("  • send_da_builder_transaction() - DA Builder transactions with automatic EIP-712 signing");
@@ -504,7 +511,6 @@ fn print_completion_summary(client: &DABuilderClient, chain_id: u64) {
     println!();
     let explorer = match chain_id {
         1 => "https://etherscan.io",
-        17000 => "https://holesky.etherscan.io",
         560048 => "https://hoodi.etherscan.io",
         _ => "https://etherscan.io",
     };
@@ -528,7 +534,7 @@ fn print_help() {
     println!();
     println!("Environment Variables:");
     println!("  PRIVATE_KEY       Your wallet private key (required)");
-    println!("  TARGET_CHAIN      Target chain: holesky, hoodi (default), mainnet");
+    println!("  TARGET_CHAIN      Target chain: hoodi (default), mainnet");
     println!("  RPC_URL           RPC endpoint (auto-configured for testnets)");
     println!("  GAS_TANK_ADDRESS  Gas Tank contract address (auto-configured)");
     println!("  PROPOSER_MULTICALL_ADDRESS  ProposerMulticall address (auto-configured)");
@@ -550,15 +556,20 @@ async fn show_account_status(client: &DABuilderClient) -> Result<(), Box<dyn std
     let balance = client.get_balance(client.address()).await?;
     println!("Wallet Balance: {} wei ({:.6} ETH)", balance, u256_to_eth(balance));
     
-    // On-chain balance
+    // Gas Tank balance from onchain contract
     let gas_tank_balance = client.gas_tank_balance().await?;
-    println!("On-chain Balance: {} wei ({:.6} ETH)", gas_tank_balance, u256_to_eth(gas_tank_balance));
+    println!("Gas Tank Balance (onchain): {} wei ({:.6} ETH)", gas_tank_balance, u256_to_eth(gas_tank_balance));
 
-    // Off-chain: fetch account info via DA Builder vendor RPC using the reusable client
-    let (_rpc_balance, outstanding) = client.fetch_account_info_via_rpc(client.address()).await?;
-    let available = gas_tank_balance.saturating_sub(outstanding);
-    println!("Outstanding Charge (off-chain): {} wei ({:.6} ETH)", outstanding, u256_to_eth(outstanding));
+    // Fetch account info via DA Builder vendor RPC
+    let account_info = client.fetch_account_info_via_rpc(client.address()).await?;
+    println!("Gas Tank Balance (RPC-reported): {} wei ({:.6} ETH)", account_info.balance, u256_to_eth(account_info.balance));
+    println!("Outstanding Charge: {} wei ({:.6} ETH)", account_info.outstanding_charge, u256_to_eth(account_info.outstanding_charge));
+    
+    // Calculate available balance using onchain balance (more authoritative)
+    let available = gas_tank_balance.saturating_sub(account_info.outstanding_charge);
     println!("Available Balance: {} wei ({:.6} ETH)", available, u256_to_eth(available));
+    println!("Whitelisted: {}", account_info.whitelisted);
+    println!("Gas Unit Discount: {} wei ({:.6} ETH)", account_info.gas_unit_discount, u256_to_eth(account_info.gas_unit_discount));
     
     Ok(())
 }
@@ -621,10 +632,11 @@ async fn send_custom_tx(
 
     let to = to.ok_or_else(|| eyre::eyre!("--to <address> is required"))?;
     let deadline = deadline_secs.unwrap_or_else(|| {
+        // Default to 60 seconds
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_secs() + 3600
+            .as_secs() + 60
     });
 
     let tx = TransactionRequest {
@@ -640,7 +652,16 @@ async fn send_custom_tx(
     let pending = client.send_da_builder_transaction(tx, deadline).await?;
     println!("✅ Transaction submitted to DA Builder");
     println!("   DA Builder internal hash: {}", pending.tx_hash());
-    let receipt = pending.get_receipt().await?;
+    println!("   Deadline: {} ({} seconds from now)", 
+        deadline, 
+        deadline.saturating_sub(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+        )
+    );
+    let receipt = handle_transaction_receipt_with_deadline(pending, "Custom DA Builder transaction", Some(deadline)).await?;
     println!("✅ Mined: {}", receipt.transaction_hash);
     Ok(())
 }
@@ -683,22 +704,89 @@ fn parse_gwei_to_wei(s: &str) -> Result<u128, Box<dyn std::error::Error>> {
 }
 
 /// Helper function to handle transaction receipts and check for failures
+/// For DA Builder transactions, optionally checks deadline to avoid waiting indefinitely
+/// after the transaction can no longer be executed
 async fn handle_transaction_receipt(
     pending_tx: alloy_provider::PendingTransactionBuilder<alloy_network::Ethereum>,
     operation_name: &str,
 ) -> Result<TransactionReceipt, Box<dyn std::error::Error>> {
-    let receipt = pending_tx.get_receipt().await?;
+    handle_transaction_receipt_with_deadline(pending_tx, operation_name, None).await
+}
+
+/// Helper function to handle transaction receipts with optional deadline checking
+/// If a deadline is provided, stops waiting if the deadline expires (since TrustlessProposer
+/// will revert with DeadlinePassed, making the transaction impossible to execute)
+async fn handle_transaction_receipt_with_deadline(
+    pending_tx: alloy_provider::PendingTransactionBuilder<alloy_network::Ethereum>,
+    operation_name: &str,
+    deadline_secs: Option<u64>,
+) -> Result<TransactionReceipt, Box<dyn std::error::Error>> {
+    // If no deadline, use the standard waiting mechanism
+    if deadline_secs.is_none() {
+        let receipt = pending_tx.get_receipt().await?;
+        
+        // Check if the transaction succeeded
+        if !receipt.status() {
+            return Err(format!(
+                "❌ {} failed - transaction reverted. Transaction hash: {}",
+                operation_name, receipt.transaction_hash
+            ).into());
+        }
+        
+        println!("✅ {} completed successfully: {}", operation_name, receipt.transaction_hash);
+        return Ok(receipt);
+    }
     
-    // Check if the transaction succeeded
-    if !receipt.status() {
+    // With deadline: use timeout to stop waiting when deadline expires
+    let deadline = deadline_secs.unwrap();
+    // Extract hash as owned value before moving pending_tx
+    let tx_hash = *pending_tx.tx_hash();
+    
+    // Calculate how long until deadline
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    
+    if now >= deadline {
         return Err(format!(
-            "❌ {} failed - transaction reverted. Transaction hash: {}",
-            operation_name, receipt.transaction_hash
+            "❌ {} expired - deadline already passed. Transaction hash: {}. \
+            The transaction can no longer be executed (TrustlessProposer enforces deadline).",
+            operation_name, tx_hash
         ).into());
     }
     
-    println!("✅ {} completed successfully: {}", operation_name, receipt.transaction_hash);
-    Ok(receipt)
+    let time_until_deadline = deadline - now;
+    let timeout_duration = tokio::time::Duration::from_secs(time_until_deadline);
+    
+    // Race between getting receipt and deadline timeout
+    match tokio::time::timeout(timeout_duration, pending_tx.get_receipt()).await {
+        Ok(Ok(receipt)) => {
+            // Receipt received before deadline
+            if !receipt.status() {
+                return Err(format!(
+                    "❌ {} failed - transaction reverted. Transaction hash: {}",
+                    operation_name, receipt.transaction_hash
+                ).into());
+            }
+            
+            println!("✅ {} completed successfully: {}", operation_name, receipt.transaction_hash);
+            Ok(receipt)
+        }
+        Ok(Err(e)) => {
+            // Error getting receipt
+            Err(e.into())
+        }
+        Err(_) => {
+            // Timeout - deadline passed
+            Err(format!(
+                "❌ {} expired - deadline passed before transaction was included. \
+                Transaction hash: {}. The transaction can no longer be executed \
+                (TrustlessProposer enforces deadline and will revert with DeadlinePassed).",
+                operation_name, tx_hash
+            ).into())
+        }
+    }
 }
 
 async fn deposit_to_gas_tank(client: &DABuilderClient) -> Result<(), Box<dyn std::error::Error>> {

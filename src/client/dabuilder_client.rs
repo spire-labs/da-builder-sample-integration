@@ -93,6 +93,20 @@ pub struct DABuilderClient {
     dabuilder_salt: [u8; 32],
 }
 
+/// Account information returned from DA Builder RPC
+#[derive(Debug, Clone)]
+pub struct AccountInfo {
+    /// Current balance in the GasTank (in wei) from DA Builder's indexer
+    /// Note: This may differ slightly from onchain balance due to indexing delays
+    pub balance: U256,
+    /// Charges pending settlement (in wei)
+    pub outstanding_charge: U256,
+    /// Whether the account is whitelisted to submit transactions
+    pub whitelisted: bool,
+    /// Gas unit discount applied to transactions (in wei)
+    pub gas_unit_discount: U256,
+}
+
 impl DABuilderClient {
     pub fn new(rpc_url: &str, private_key: &str, chain_id: u64, gas_tank_address: Address) -> Result<Self> {
         Self::new_with_salt(rpc_url, private_key, chain_id, gas_tank_address, None)
@@ -235,13 +249,22 @@ impl DABuilderClient {
         let mut tx = trustless_proposer_tx_request
             .with_nonce(nonce)
             .with_gas_limit(gas_estimate)
-            .with_chain_id(self.chain_id)
-            .with_max_fee_per_gas(transaction_request.max_fee_per_gas.unwrap_or(20_000_000_000u128))
-            .with_max_priority_fee_per_gas(transaction_request.max_priority_fee_per_gas.unwrap_or(2_000_000_000u128));
+            .with_chain_id(self.chain_id);
+        
+        // Only set gas prices if explicitly provided, otherwise let Alloy use recommended values
+        if let Some(max_fee) = transaction_request.max_fee_per_gas {
+            tx = tx.with_max_fee_per_gas(max_fee);
+        }
+        if let Some(max_priority_fee) = transaction_request.max_priority_fee_per_gas {
+            tx = tx.with_max_priority_fee_per_gas(max_priority_fee);
+        }
             
         if has_blob_data {
-            tx = tx.with_blob_sidecar(blob_sidecar.unwrap())
-                .with_max_fee_per_blob_gas(transaction_request.max_fee_per_blob_gas.unwrap_or(15_000_000_000u128));
+            tx = tx.with_blob_sidecar(blob_sidecar.unwrap());
+            // Only set blob gas price if explicitly provided
+            if let Some(max_blob_fee) = transaction_request.max_fee_per_blob_gas {
+                tx = tx.with_max_fee_per_blob_gas(max_blob_fee);
+            }
         }
 
         // Send the transaction and return the pending transaction
@@ -295,9 +318,16 @@ impl DABuilderClient {
         Ok(pending_tx)
     }
 
-    /// Fetch account info (balance and outstanding_charge) via DA Builder vendor RPC.
+    /// Fetch account info (balance, outstanding_charge, whitelisted, gas_unit_discount) via DA Builder vendor RPC.
+    /// 
+    /// Uses the `dab_accountInfo` RPC method which returns:
+    /// - `balance`: Current balance in the GasTank (in wei)
+    /// - `outstanding_charge`: Charges pending settlement (in wei)
+    /// - `whitelisted`: Whether the account is whitelisted to submit transactions
+    /// - `gas_unit_discount`: Gas unit discount applied to transactions (in wei)
+    /// 
     /// Requires `with_da_builder_rpc` to have been called.
-    pub async fn fetch_account_info_via_rpc(&self, operator: Address) -> Result<(U256, U256)> {
+    pub async fn fetch_account_info_via_rpc(&self, operator: Address) -> Result<AccountInfo> {
         let da_provider = self
             .da_builder_provider
             .as_ref()
@@ -306,23 +336,62 @@ impl DABuilderClient {
         // The DA Builder RPC expects a single string parameter: the address
         let params = vec![format!("0x{operator:x}")];
 
-        // The DA Builder RPC returns a flat object with decimal strings
-        let account: std::collections::HashMap<String, String> = da_provider
-            .raw_request("eth_accountInfo".into(), params)
+        // The DA Builder RPC returns a JSON object with mixed types (strings for numbers, boolean for whitelisted)
+        let account: serde_json::Value = da_provider
+            .raw_request("dab_accountInfo".into(), params)
             .await?;
 
+        // Extract values handling both string and number types
         let balance = account
             .get("balance")
-            .and_then(|s| s.parse::<u128>().ok())
+            .and_then(|v| {
+                match v {
+                    serde_json::Value::String(s) => s.parse::<u128>().ok(),
+                    serde_json::Value::Number(n) => n.as_u64().map(|u| u as u128),
+                    _ => None,
+                }
+            })
             .map(U256::from)
             .unwrap_or(U256::ZERO);
         let outstanding_charge = account
             .get("outstanding_charge")
-            .and_then(|s| s.parse::<u128>().ok())
+            .and_then(|v| {
+                match v {
+                    serde_json::Value::String(s) => s.parse::<u128>().ok(),
+                    serde_json::Value::Number(n) => n.as_u64().map(|u| u as u128),
+                    _ => None,
+                }
+            })
+            .map(U256::from)
+            .unwrap_or(U256::ZERO);
+        let whitelisted = account
+            .get("whitelisted")
+            .and_then(|v| {
+                match v {
+                    serde_json::Value::Bool(b) => Some(*b),
+                    serde_json::Value::String(s) => s.parse::<bool>().ok(),
+                    _ => None,
+                }
+            })
+            .unwrap_or(false);
+        let gas_unit_discount = account
+            .get("gas_unit_discount")
+            .and_then(|v| {
+                match v {
+                    serde_json::Value::String(s) => s.parse::<u128>().ok(),
+                    serde_json::Value::Number(n) => n.as_u64().map(|u| u as u128),
+                    _ => None,
+                }
+            })
             .map(U256::from)
             .unwrap_or(U256::ZERO);
 
-        Ok((balance, outstanding_charge))
+        Ok(AccountInfo {
+            balance,
+            outstanding_charge,
+            whitelisted,
+            gas_unit_discount,
+        })
     }
 
     //

@@ -4,21 +4,22 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-alloy = { version = "1.0", features = ["full"] }
-alloy-provider = "1.0"
-alloy-transport-http = "1.0"
-alloy-signer-local = "1.0"
-alloy-contract = "1.0"
-alloy-rpc-types = "1.0"
-alloy-network = "1.0"
-alloy-dyn-abi = "1.0"
-alloy-primitives = "1.0"
+alloy = { version = "1.4", features = ["full"] }
+alloy-provider = "1.4"
+alloy-transport-http = "1.4"
+alloy-signer-local = "1.4"
+alloy-contract = "1.4"
+alloy-rpc-types = "1.4"
+alloy-network = "1.4"
+alloy-dyn-abi = "1.5"
+alloy-primitives = "1.5"
 tokio = { version = "1.0", features = ["full"] }
 hex = "0.4"
 eyre = "0.6"
 url = "2.5"
-alloy-sol-types = "1.2"
-alloy-eips = "1.0.20"
+alloy-sol-types = "1.5"
+alloy-eips = "1.4"
+serde_json = "1.0"
 
 [build-dependencies]
 serde_json = "1.0" 
