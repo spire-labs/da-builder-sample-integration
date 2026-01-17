@@ -9,6 +9,7 @@ use alloy_network::Ethereum;
 use alloy_rpc_types::TransactionRequest;
 use alloy::primitives::TxKind;
 use alloy_network::{TransactionBuilder, TransactionBuilder4844, TransactionBuilder7702};
+use alloy_transport_http::Client as HttpClient;
 
 
 use alloy_eips::eip7702::Authorization;
@@ -18,6 +19,7 @@ use alloy::{
     sol,
     sol_types::SolType,
 };
+use serde::{Serialize, Deserialize};
 
 type NestedSignedCalldata = sol! { 
     tuple(
@@ -86,6 +88,7 @@ pub const DABUILDER_SALT: [u8; 32] = [
 pub struct DABuilderClient {
     provider: DynProvider<Ethereum>,
     da_builder_provider: Option<DynProvider<Ethereum>>,
+    da_builder_rpc_url: Option<String>,
     wallet: PrivateKeySigner,
     address: Address,
     chain_id: u64,
@@ -107,6 +110,31 @@ pub struct AccountInfo {
     pub gas_unit_discount: U256,
 }
 
+/// JSON-RPC request structure for authenticated requests
+#[derive(Serialize)]
+struct JsonRpcRequest {
+    jsonrpc: String,
+    method: String,
+    params: Vec<String>,
+    id: u64,
+}
+
+/// JSON-RPC response structure
+#[derive(Deserialize)]
+struct JsonRpcResponse {
+    #[serde(default)]
+    result: serde_json::Value,
+    #[serde(default)]
+    error: Option<JsonRpcError>,
+}
+
+/// JSON-RPC error structure
+#[derive(Deserialize)]
+struct JsonRpcError {
+    code: i32,
+    message: String,
+}
+
 impl DABuilderClient {
     pub fn new(rpc_url: &str, private_key: &str, chain_id: u64, gas_tank_address: Address) -> Result<Self> {
         Self::new_with_salt(rpc_url, private_key, chain_id, gas_tank_address, None)
@@ -126,6 +154,7 @@ impl DABuilderClient {
         Ok(Self {
             provider,
             da_builder_provider: None,
+            da_builder_rpc_url: None,
             wallet,
             address,
             chain_id,
@@ -159,6 +188,7 @@ impl DABuilderClient {
         Ok(Self {
             provider,
             da_builder_provider: Some(da_builder_provider),
+            da_builder_rpc_url: None,
             wallet,
             address,
             chain_id,
@@ -171,9 +201,10 @@ impl DABuilderClient {
         let da_builder_url = Url::parse(da_builder_rpc_url)?;
         let da_builder_provider = ProviderBuilder::new()
             .wallet(self.wallet.clone())
-            .connect_http(da_builder_url)
+            .connect_http(da_builder_url.clone())
             .erased();
         self.da_builder_provider = Some(da_builder_provider);
+        self.da_builder_rpc_url = Some(da_builder_rpc_url.to_string());
         Ok(self)
     }
 
@@ -318,30 +349,58 @@ impl DABuilderClient {
         Ok(pending_tx)
     }
 
-    /// Fetch account info (balance, outstanding_charge, whitelisted, gas_unit_discount) via DA Builder vendor RPC.
-    /// 
-    /// Uses the `dab_accountInfo` RPC method which returns:
-    /// - `balance`: Current balance in the GasTank (in wei)
-    /// - `outstanding_charge`: Charges pending settlement (in wei)
-    /// - `whitelisted`: Whether the account is whitelisted to submit transactions
-    /// - `gas_unit_discount`: Gas unit discount applied to transactions (in wei)
-    /// 
-    /// Requires `with_da_builder_rpc` to have been called.
+    /// Build the X-Flashbots-Signature header for authenticated RPC requests
+    async fn build_signature_header(&self, body: &str) -> Result<String> {
+        let body_hash = alloy::primitives::keccak256(body.as_bytes());
+        let eth_message_hash = alloy::primitives::utils::eip191_hash_message(body_hash);
+        let signature = self.wallet.sign_hash(&eth_message_hash).await?;
+        
+        let address_str = self.address.to_string().to_lowercase();
+        let signature_str = signature.to_string();
+        Ok(format!("{}:{}", address_str, signature_str))
+    }
+
+    /// Fetch account info via DA Builder RPC.
     pub async fn fetch_account_info_via_rpc(&self, operator: Address) -> Result<AccountInfo> {
-        let da_provider = self
-            .da_builder_provider
+        let da_builder_rpc_url = self
+            .da_builder_rpc_url
             .as_ref()
             .ok_or_else(|| eyre::eyre!("DA Builder RPC not configured. Call with_da_builder_rpc() first."))?;
 
-        // The DA Builder RPC expects a single string parameter: the address
-        let params = vec![format!("0x{operator:x}")];
-
-        // The DA Builder RPC returns a JSON object with mixed types (strings for numbers, boolean for whitelisted)
-        let account: serde_json::Value = da_provider
-            .raw_request("dab_accountInfo".into(), params)
+        let operator_str = format!("0x{:x}", operator).to_lowercase();
+        
+        let request = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            method: "dab_accountInfo".to_string(),
+            params: vec![operator_str],
+            id: 1,
+        };
+        
+        let body = serde_json::to_string(&request)?;
+        let auth_header = self.build_signature_header(&body).await?;
+        
+        let client = HttpClient::new();
+        let response = client
+            .post(da_builder_rpc_url)
+            .header("Content-Type", "application/json")
+            .header("X-Flashbots-Signature", &auth_header)
+            .body(body.clone())
+            .send()
             .await?;
-
-        // Extract values handling both string and number types
+        
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(eyre::eyre!("HTTP error {}: {}", status, error_text));
+        }
+        
+        let rpc_response: JsonRpcResponse = response.json().await?;
+        
+        if let Some(error) = rpc_response.error {
+            return Err(eyre::eyre!("RPC error {}: {}", error.code, error.message));
+        }
+        
+        let account = &rpc_response.result;
         let balance = account
             .get("balance")
             .and_then(|v| {
