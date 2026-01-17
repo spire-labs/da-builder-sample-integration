@@ -9,7 +9,11 @@ import "../interfaces/IProposer.sol";
 /// @notice A secure proposer implementation that requires cryptographic signatures
 /// @dev Uses custom storage layout to prevent conflicts with future account code versions
 /// @custom:storage-location keccak256(abi.encode(uint256(keccak256("Spire.TrustlessProposer.1.0.0")) - 1)) & ~bytes32(uint256(0xff))
-contract TrustlessProposer is IProposer, EIP712 layout at 25_732_701_950_170_629_563_862_734_149_613_701_595_693_524_766_703_709_478_375_563_609_458_162_252_544 {
+contract TrustlessProposer layout at 25_732_701_950_170_629_563_862_734_149_613_701_595_693_524_766_703_709_478_375_563_609_458_162_252_544
+    is
+    IProposer,
+    EIP712
+{
     error NonceTooLow();
     error DeadlinePassed();
     error SignatureInvalid();

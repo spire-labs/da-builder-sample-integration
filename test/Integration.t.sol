@@ -51,8 +51,9 @@ contract IntegrationTest is Test {
         console.log("============================");
 
         address target = address(inbox);
-        bytes memory data =
-            abi.encodeWithSignature("sendMessage(address,bytes)", address(0x42), abi.encodeWithSignature("increment()"));
+        bytes memory data = abi.encodeWithSignature(
+            "sendMessage(address,bytes)", address(0x42), abi.encodeWithSignature("increment()")
+        );
 
         // Debug: Check addresses
         console.log("User (EOA) address:", user);
@@ -78,8 +79,9 @@ contract IntegrationTest is Test {
         console.log("Testing TrustlessProposer gas limit enforcement");
 
         address target = address(inbox);
-        bytes memory data =
-            abi.encodeWithSignature("sendMessage(address,bytes)", address(0x42), abi.encodeWithSignature("increment()"));
+        bytes memory data = abi.encodeWithSignature(
+            "sendMessage(address,bytes)", address(0x42), abi.encodeWithSignature("increment()")
+        );
 
         // Create signed data with a very low gas limit that will be exceeded
         bytes memory signedData = createTrustlessProposerData(user, target, data, 0, 1_000); // Very low gas limit
@@ -95,8 +97,9 @@ contract IntegrationTest is Test {
 
     function testTrustlessProposerRejectsInvalidSignature() public {
         address target = address(inbox);
-        bytes memory data =
-            abi.encodeWithSignature("sendMessage(address,bytes)", address(0x42), abi.encodeWithSignature("increment()"));
+        bytes memory data = abi.encodeWithSignature(
+            "sendMessage(address,bytes)", address(0x42), abi.encodeWithSignature("increment()")
+        );
         // Create data with invalid signature
         bytes memory invalidData = abi.encode(bytes(""), block.timestamp, 0, data);
         vm.prank(PROPOSER_MULTICALL);
@@ -106,8 +109,9 @@ contract IntegrationTest is Test {
 
     function testTrustlessProposerRejectsExpiredDeadline() public {
         address target = address(inbox);
-        bytes memory data =
-            abi.encodeWithSignature("sendMessage(address,bytes)", address(0x42), abi.encodeWithSignature("increment()"));
+        bytes memory data = abi.encodeWithSignature(
+            "sendMessage(address,bytes)", address(0x42), abi.encodeWithSignature("increment()")
+        );
         // Create data with expired deadline
         uint256 expiredDeadline = block.timestamp - 1;
         bytes memory expiredData = abi.encode(bytes(""), expiredDeadline, 0, data);
@@ -118,8 +122,9 @@ contract IntegrationTest is Test {
 
     function testTrustlessProposerRejectsWrongNonce() public {
         address target = address(inbox);
-        bytes memory data =
-            abi.encodeWithSignature("sendMessage(address,bytes)", address(0x42), abi.encodeWithSignature("increment()"));
+        bytes memory data = abi.encodeWithSignature(
+            "sendMessage(address,bytes)", address(0x42), abi.encodeWithSignature("increment()")
+        );
         // Create data with wrong nonce
         bytes memory wrongNonceData = abi.encode(bytes(""), block.timestamp, 999, data);
         vm.prank(PROPOSER_MULTICALL);
@@ -136,8 +141,9 @@ contract IntegrationTest is Test {
 
         // Test basic call functionality
         address target = address(inbox);
-        bytes memory data =
-            abi.encodeWithSignature("sendMessage(address,bytes)", address(0x42), abi.encodeWithSignature("increment()"));
+        bytes memory data = abi.encodeWithSignature(
+            "sendMessage(address,bytes)", address(0x42), abi.encodeWithSignature("increment()")
+        );
 
         vm.prank(PROPOSER_MULTICALL);
         (bool success,) =
@@ -228,8 +234,9 @@ contract IntegrationTest is Test {
 
         // Test that non-builder cannot call proposers directly
         address target = address(inbox);
-        bytes memory data =
-            abi.encodeWithSignature("sendMessage(address,bytes)", address(0x42), abi.encodeWithSignature("increment()"));
+        bytes memory data = abi.encodeWithSignature(
+            "sendMessage(address,bytes)", address(0x42), abi.encodeWithSignature("increment()")
+        );
 
         // This should fail because the caller is not PROPOSER_MULTICALL or the contract itself
         address unauthorized = address(0xdeadbeef);
